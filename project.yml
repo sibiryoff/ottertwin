@@ -1,0 +1,49 @@
+name: OtterTwin
+options:
+  bundleIdPrefix: com.mas
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "16.4"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_HARDENED_RUNTIME: YES
+
+targets:
+  OtterTwin:
+    type: application
+    platform: macOS
+    sources:
+      - path: OtterTwin
+        excludes:
+          - "Resources/OtterTwin.entitlements"
+    resources:
+      - OtterTwin/Resources/Assets.xcassets
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mas.ottertwin
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_CFBundleDisplayName: OtterTwin
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
+        CODE_SIGN_ENTITLEMENTS: OtterTwin/Resources/OtterTwin.entitlements
+    dependencies:
+      - framework: NetFS.framework
+        embed: false
+
+  OtterTwinTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - OtterTwinTests
+    dependencies:
+      - target: OtterTwin
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mas.ottertwinTests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OtterTwin.app/Contents/MacOS/OtterTwin"
+        BUNDLE_LOADER: "$(TEST_HOST)"

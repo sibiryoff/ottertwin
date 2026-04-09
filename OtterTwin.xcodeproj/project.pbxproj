@@ -1,0 +1,571 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		0A180D06E12A5978BF8F2B16 /* FileOperation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FDA53619E1DC972A8C478F5 /* FileOperation.swift */; };
+		0AA16FCDBD2F27B146DBBE47 /* LocalProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A867997FAE4C66F43D14EAA /* LocalProviderTests.swift */; };
+		1D9E5739E2F47AD04E432C30 /* FilePanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2384162BAEF697035001D92 /* FilePanelView.swift */; };
+		1FB7F267E0DF537DF40E2B8F /* VFSProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = D191D9CF5AECAA32C258E119 /* VFSProvider.swift */; };
+		216979B74AD6CC7D7DDF761E /* SettingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D29EAA4E46DE1A8BF50113 /* SettingsService.swift */; };
+		2DF6EDAB7E772B2D13D84626 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72FC3FFD5054A8F1437B9343 /* Extensions.swift */; };
+		2E7E123A1277173BA4C0F9C0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4B74631B4A0FFAA4E3739148 /* Assets.xcassets */; };
+		5BFFE3DF4AA4B3290253BB49 /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35488D787578F510155111C1 /* FileItem.swift */; };
+		6CDFCECD9024B54F7398FD98 /* ChecksumServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249DA131B3BA20F1A0646312 /* ChecksumServiceTests.swift */; };
+		6E19FF66AC14C9711C1751EF /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A2528D5DA3E0668F5052E8 /* MainView.swift */; };
+		78A96227594F7E28407D2C53 /* SMBService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3255FB702268303E805C6D6E /* SMBService.swift */; };
+		7B79EEF2E71C0D51CA2FFB57 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F67CD1397FB940E3BC916CC0 /* SettingsView.swift */; };
+		87FE373643697A9BEE7F04DE /* FileOperationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC9B3F192B42D565D52E0D2 /* FileOperationServiceTests.swift */; };
+		89C7C627F61FF0FC0DF6E853 /* FileTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C565DF821D8C725234A0FE64 /* FileTableView.swift */; };
+		8DAB438ED7AFF496E02881AE /* OperationProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C192A59603D6A2509ED873F /* OperationProgressView.swift */; };
+		9475FF6A5F5BF4C423742380 /* ScopedAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1C077EFB6D6975C34C00A /* ScopedAccess.swift */; };
+		9C0356F59623915276AC5E95 /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5585948090F14B80DA374DE0 /* ToolbarView.swift */; };
+		A255DC549EEA4AE0A444267B /* ConnectionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3BAA5EE54E3E93CA2D6D11A /* ConnectionInfo.swift */; };
+		AB7690B9BA74E9D1F2B4C83D /* OtterTwinApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E11A23A4824A418047396C46 /* OtterTwinApp.swift */; };
+		BEDABEEB5ADE623FC6FA0A55 /* FileOperationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81D227B86718B9FC4B6DCFBE /* FileOperationService.swift */; };
+		C239EB549D8046A403BF24E0 /* ChecksumService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56B28E864E097A0B95E07AA /* ChecksumService.swift */; };
+		D379D4EF72F094C98FAA8DA8 /* LocalProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58F6B55DD82AE2A0C3C87DAB /* LocalProvider.swift */; };
+		E84235925D920304DF560BBD /* NetFS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9BC4388CCF1C6F3938345DB4 /* NetFS.framework */; };
+		E9CB0EE345B1356705E01C1F /* SMBProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 932156837B64DF92DF1C5058 /* SMBProvider.swift */; };
+		F0841951BBA840F6521D2AA9 /* SMBConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000C520A099AEBB457AB87AA /* SMBConnectView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F423ECA71225349A4405AF35 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 30C1CA676A60958C5EAF1E90 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = BA0E059C57A0CEFAFCBAD620;
+			remoteInfo = OtterTwin;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		000C520A099AEBB457AB87AA /* SMBConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBConnectView.swift; sourceTree = "<group>"; };
+		209010625CC0CD6A271DD2B6 /* OtterTwinTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OtterTwinTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		249DA131B3BA20F1A0646312 /* ChecksumServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecksumServiceTests.swift; sourceTree = "<group>"; };
+		2A867997FAE4C66F43D14EAA /* LocalProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalProviderTests.swift; sourceTree = "<group>"; };
+		3255FB702268303E805C6D6E /* SMBService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBService.swift; sourceTree = "<group>"; };
+		34E1C077EFB6D6975C34C00A /* ScopedAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScopedAccess.swift; sourceTree = "<group>"; };
+		35488D787578F510155111C1 /* FileItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItem.swift; sourceTree = "<group>"; };
+		417C6C522CADBBF479E77687 /* OtterTwin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OtterTwin.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4B74631B4A0FFAA4E3739148 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5585948090F14B80DA374DE0 /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
+		58F6B55DD82AE2A0C3C87DAB /* LocalProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalProvider.swift; sourceTree = "<group>"; };
+		72A2528D5DA3E0668F5052E8 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		72FC3FFD5054A8F1437B9343 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
+		7FDA53619E1DC972A8C478F5 /* FileOperation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOperation.swift; sourceTree = "<group>"; };
+		81D227B86718B9FC4B6DCFBE /* FileOperationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOperationService.swift; sourceTree = "<group>"; };
+		8C192A59603D6A2509ED873F /* OperationProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationProgressView.swift; sourceTree = "<group>"; };
+		932156837B64DF92DF1C5058 /* SMBProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBProvider.swift; sourceTree = "<group>"; };
+		9BC4388CCF1C6F3938345DB4 /* NetFS.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = NetFS.framework; sourceTree = "<group>"; };
+		A2384162BAEF697035001D92 /* FilePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePanelView.swift; sourceTree = "<group>"; };
+		A56B28E864E097A0B95E07AA /* ChecksumService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecksumService.swift; sourceTree = "<group>"; };
+		C565DF821D8C725234A0FE64 /* FileTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTableView.swift; sourceTree = "<group>"; };
+		D191D9CF5AECAA32C258E119 /* VFSProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VFSProvider.swift; sourceTree = "<group>"; };
+		E11A23A4824A418047396C46 /* OtterTwinApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtterTwinApp.swift; sourceTree = "<group>"; };
+		E3BAA5EE54E3E93CA2D6D11A /* ConnectionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionInfo.swift; sourceTree = "<group>"; };
+		E3D29EAA4E46DE1A8BF50113 /* SettingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsService.swift; sourceTree = "<group>"; };
+		EAC9B3F192B42D565D52E0D2 /* FileOperationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOperationServiceTests.swift; sourceTree = "<group>"; };
+		F67CD1397FB940E3BC916CC0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		0B8D5F85907738F6D0186860 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E84235925D920304DF560BBD /* NetFS.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		16CA38E7AA45338EE824C57E /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				A56B28E864E097A0B95E07AA /* ChecksumService.swift */,
+				81D227B86718B9FC4B6DCFBE /* FileOperationService.swift */,
+				E3D29EAA4E46DE1A8BF50113 /* SettingsService.swift */,
+				3255FB702268303E805C6D6E /* SMBService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		1841D597D436B9EC7A2AB6D8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				9BC4388CCF1C6F3938345DB4 /* NetFS.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		32CC9FF1C17AC36B9918E6ED /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				4B74631B4A0FFAA4E3739148 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		8760FC2BFCF0BA6ED0A382E6 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				417C6C522CADBBF479E77687 /* OtterTwin.app */,
+				209010625CC0CD6A271DD2B6 /* OtterTwinTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9098EDD1E9A26F171CA32A71 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A2384162BAEF697035001D92 /* FilePanelView.swift */,
+				C565DF821D8C725234A0FE64 /* FileTableView.swift */,
+				72A2528D5DA3E0668F5052E8 /* MainView.swift */,
+				8C192A59603D6A2509ED873F /* OperationProgressView.swift */,
+				F67CD1397FB940E3BC916CC0 /* SettingsView.swift */,
+				000C520A099AEBB457AB87AA /* SMBConnectView.swift */,
+				5585948090F14B80DA374DE0 /* ToolbarView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		98ECA04F0BED953E51BF2B00 /* OtterTwinTests */ = {
+			isa = PBXGroup;
+			children = (
+				249DA131B3BA20F1A0646312 /* ChecksumServiceTests.swift */,
+				EAC9B3F192B42D565D52E0D2 /* FileOperationServiceTests.swift */,
+				2A867997FAE4C66F43D14EAA /* LocalProviderTests.swift */,
+			);
+			path = OtterTwinTests;
+			sourceTree = "<group>";
+		};
+		BAEED546002109C97927C692 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				E3BAA5EE54E3E93CA2D6D11A /* ConnectionInfo.swift */,
+				35488D787578F510155111C1 /* FileItem.swift */,
+				7FDA53619E1DC972A8C478F5 /* FileOperation.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		C15AF7565577CD2AFC7C5067 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				E11A23A4824A418047396C46 /* OtterTwinApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		DDE9341D941EB19DD95D9E04 = {
+			isa = PBXGroup;
+			children = (
+				F85AA1407C092FE150AFBFAF /* OtterTwin */,
+				98ECA04F0BED953E51BF2B00 /* OtterTwinTests */,
+				1841D597D436B9EC7A2AB6D8 /* Frameworks */,
+				8760FC2BFCF0BA6ED0A382E6 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		EC42D97F78C95CFF05E6250F /* VFS */ = {
+			isa = PBXGroup;
+			children = (
+				72FC3FFD5054A8F1437B9343 /* Extensions.swift */,
+				58F6B55DD82AE2A0C3C87DAB /* LocalProvider.swift */,
+				34E1C077EFB6D6975C34C00A /* ScopedAccess.swift */,
+				932156837B64DF92DF1C5058 /* SMBProvider.swift */,
+				D191D9CF5AECAA32C258E119 /* VFSProvider.swift */,
+			);
+			path = VFS;
+			sourceTree = "<group>";
+		};
+		F85AA1407C092FE150AFBFAF /* OtterTwin */ = {
+			isa = PBXGroup;
+			children = (
+				C15AF7565577CD2AFC7C5067 /* App */,
+				BAEED546002109C97927C692 /* Models */,
+				32CC9FF1C17AC36B9918E6ED /* Resources */,
+				16CA38E7AA45338EE824C57E /* Services */,
+				EC42D97F78C95CFF05E6250F /* VFS */,
+				9098EDD1E9A26F171CA32A71 /* Views */,
+			);
+			path = OtterTwin;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4AE4BCA6FC633C87BFD91EA4 /* OtterTwinTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BE4CD5F14CC2E8F8CD4BE2BE /* Build configuration list for PBXNativeTarget "OtterTwinTests" */;
+			buildPhases = (
+				E94C172005A7B338179C7A4E /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A023BA64AC294F1B52EE7A2E /* PBXTargetDependency */,
+			);
+			name = OtterTwinTests;
+			packageProductDependencies = (
+			);
+			productName = OtterTwinTests;
+			productReference = 209010625CC0CD6A271DD2B6 /* OtterTwinTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		BA0E059C57A0CEFAFCBAD620 /* OtterTwin */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 390EEC82617B4E0DB51C4CCE /* Build configuration list for PBXNativeTarget "OtterTwin" */;
+			buildPhases = (
+				7211A09F4CED0C1E33AA9750 /* Sources */,
+				393535C7F779C6DCEEF81875 /* Resources */,
+				0B8D5F85907738F6D0186860 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = OtterTwin;
+			packageProductDependencies = (
+			);
+			productName = OtterTwin;
+			productReference = 417C6C522CADBBF479E77687 /* OtterTwin.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		30C1CA676A60958C5EAF1E90 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1640;
+				TargetAttributes = {
+					BA0E059C57A0CEFAFCBAD620 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 3B299EFAD7449342E75E1D8E /* Build configuration list for PBXProject "OtterTwin" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = DDE9341D941EB19DD95D9E04;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 8760FC2BFCF0BA6ED0A382E6 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				BA0E059C57A0CEFAFCBAD620 /* OtterTwin */,
+				4AE4BCA6FC633C87BFD91EA4 /* OtterTwinTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		393535C7F779C6DCEEF81875 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2E7E123A1277173BA4C0F9C0 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		7211A09F4CED0C1E33AA9750 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C239EB549D8046A403BF24E0 /* ChecksumService.swift in Sources */,
+				A255DC549EEA4AE0A444267B /* ConnectionInfo.swift in Sources */,
+				2DF6EDAB7E772B2D13D84626 /* Extensions.swift in Sources */,
+				5BFFE3DF4AA4B3290253BB49 /* FileItem.swift in Sources */,
+				0A180D06E12A5978BF8F2B16 /* FileOperation.swift in Sources */,
+				BEDABEEB5ADE623FC6FA0A55 /* FileOperationService.swift in Sources */,
+				1D9E5739E2F47AD04E432C30 /* FilePanelView.swift in Sources */,
+				89C7C627F61FF0FC0DF6E853 /* FileTableView.swift in Sources */,
+				D379D4EF72F094C98FAA8DA8 /* LocalProvider.swift in Sources */,
+				6E19FF66AC14C9711C1751EF /* MainView.swift in Sources */,
+				8DAB438ED7AFF496E02881AE /* OperationProgressView.swift in Sources */,
+				AB7690B9BA74E9D1F2B4C83D /* OtterTwinApp.swift in Sources */,
+				F0841951BBA840F6521D2AA9 /* SMBConnectView.swift in Sources */,
+				E9CB0EE345B1356705E01C1F /* SMBProvider.swift in Sources */,
+				78A96227594F7E28407D2C53 /* SMBService.swift in Sources */,
+				9475FF6A5F5BF4C423742380 /* ScopedAccess.swift in Sources */,
+				216979B74AD6CC7D7DDF761E /* SettingsService.swift in Sources */,
+				7B79EEF2E71C0D51CA2FFB57 /* SettingsView.swift in Sources */,
+				9C0356F59623915276AC5E95 /* ToolbarView.swift in Sources */,
+				1FB7F267E0DF537DF40E2B8F /* VFSProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E94C172005A7B338179C7A4E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6CDFCECD9024B54F7398FD98 /* ChecksumServiceTests.swift in Sources */,
+				87FE373643697A9BEE7F04DE /* FileOperationServiceTests.swift in Sources */,
+				0AA16FCDBD2F27B146DBBE47 /* LocalProviderTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A023BA64AC294F1B52EE7A2E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = BA0E059C57A0CEFAFCBAD620 /* OtterTwin */;
+			targetProxy = F423ECA71225349A4405AF35 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1A0F532A9B6A7F99953D8A07 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mas.ottertwinTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OtterTwin.app/Contents/MacOS/OtterTwin";
+			};
+			name = Release;
+		};
+		1A980D32B0FAD32A7E307038 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = OtterTwin/Resources/OtterTwin.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = OtterTwin;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mas.ottertwin;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		369E47D84C04353887A17567 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mas.ottertwinTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/OtterTwin.app/Contents/MacOS/OtterTwin";
+			};
+			name = Debug;
+		};
+		86607AAD5B97D2C7CF32538E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Release;
+		};
+		87660E0C5004996A7598CFBB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.10;
+			};
+			name = Debug;
+		};
+		C1FB89A87BC07FBABF8A382D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = OtterTwin/Resources/OtterTwin.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = "";
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\".\"",
+				);
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = OtterTwin;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.mas.ottertwin;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		390EEC82617B4E0DB51C4CCE /* Build configuration list for PBXNativeTarget "OtterTwin" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1A980D32B0FAD32A7E307038 /* Debug */,
+				C1FB89A87BC07FBABF8A382D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		3B299EFAD7449342E75E1D8E /* Build configuration list for PBXProject "OtterTwin" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				87660E0C5004996A7598CFBB /* Debug */,
+				86607AAD5B97D2C7CF32538E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BE4CD5F14CC2E8F8CD4BE2BE /* Build configuration list for PBXNativeTarget "OtterTwinTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				369E47D84C04353887A17567 /* Debug */,
+				1A0F532A9B6A7F99953D8A07 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 30C1CA676A60958C5EAF1E90 /* Project object */;
+}
