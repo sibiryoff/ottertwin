@@ -10,6 +10,7 @@ struct SMBConnectView: View {
     @State private var errorMessage: String?
 
     var onConnect: (SMBProvider) -> Void
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -35,7 +36,7 @@ struct SMBConnectView: View {
 
             HStack {
                 Spacer()
-                Button("Cancel", role: .cancel) { /* dismiss */ }
+                Button("Cancel", role: .cancel) { dismiss() }
                 Button("Connect") { Task { await connect() } }
                     .disabled(host.isEmpty || share.isEmpty || isConnecting)
                     .keyboardShortcut(.defaultAction)
