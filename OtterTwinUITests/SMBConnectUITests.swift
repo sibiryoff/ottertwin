@@ -28,7 +28,7 @@ final class SMBConnectUITests: OtterTwinUITestCase {
         XCTAssertFalse(app.buttons["smb.connect"].isEnabled)
     }
 
-    func testConnectButtonEnabledWithHostAndShare() {
+    func testConnectButtonEnabledWithHostShareAndUsername() {
         openSMBDialog()
 
         app.textFields["smb.host"].click()
@@ -36,6 +36,9 @@ final class SMBConnectUITests: OtterTwinUITestCase {
 
         app.textFields["smb.share"].click()
         app.textFields["smb.share"].typeText("myshare")
+
+        app.textFields["smb.username"].click()
+        app.textFields["smb.username"].typeText("alice")
 
         XCTAssertTrue(app.buttons["smb.connect"].isEnabled)
     }

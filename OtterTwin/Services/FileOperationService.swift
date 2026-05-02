@@ -1,9 +1,13 @@
 import Foundation
 import CryptoKit
+import OSLog
 
 // MARK: - FileOperationService
 
 actor FileOperationService {
+    private static let logger = Logger(subsystem: "OtterTwin", category: "FileOperationService")
+    private static let maximumRecursiveCopyDepth = 128
+
     private let settings: SettingsService
 
     init(settings: SettingsService) {
@@ -96,7 +100,9 @@ actor FileOperationService {
                     try await self.recursiveCopy(
                         source: source, destination: destination,
                         provider: provider, conflictResolution: conflictResolution,
-                        continuation: continuation
+                        continuation: continuation,
+                        visitedDirectories: [],
+                        depth: 0
                     )
                     continuation.finish()
                 } catch {
@@ -121,8 +127,12 @@ actor FileOperationService {
         var bytesWritten: Int64 = 0
 
         let writer: ChunkedWriter
-        do { writer = try provider.makeWriter(at: destination) }
-        catch { throw OperationError.ioError(error) }
+        do {
+            writer = try provider.makeWriter(at: destination)
+        } catch {
+            if Self.isFileExistsError(error) { throw OperationError.conflict(existingURL: destination) }
+            throw OperationError.ioError(error)
+        }
 
         do {
             for try await chunk in provider.readChunks(of: source, chunkSize: chunkSize) {
@@ -136,13 +146,18 @@ actor FileOperationService {
             try writer.close()
         } catch is CancellationError {
             writer.abort()
+            try? await provider.delete(destination)
             throw OperationError.cancelled
         } catch {
             writer.abort()
+            try? await provider.delete(destination)
             throw OperationError.ioError(error)
         }
 
-        guard checksumEnabled else { return .skipped }
+        guard checksumEnabled else {
+            Self.logger.warning("Checksum verification skipped for destination: \(destination.path, privacy: .public)")
+            return .skipped
+        }
 
         let sourceHex = sourceHasher.finalize().hexString
         var destHasher = SHA256()
@@ -158,16 +173,16 @@ actor FileOperationService {
                 continuation.yield(.verifying(progress: min(p, 1.0)))
             }
         } catch is CancellationError {
-            try? FileManager.default.removeItem(at: destination)
+            try? await provider.delete(destination)
             throw OperationError.cancelled
         } catch {
-            try? FileManager.default.removeItem(at: destination)
+            try? await provider.delete(destination)
             throw OperationError.ioError(error)
         }
 
         let destHex = destHasher.finalize().hexString
         if sourceHex != destHex {
-            try? FileManager.default.removeItem(at: destination)
+            try? await provider.delete(destination)
             throw OperationError.checksumMismatch(sourceHash: sourceHex, destHash: destHex)
         }
         return .verified(sourceHash: sourceHex, destHash: destHex)
@@ -203,7 +218,10 @@ actor FileOperationService {
         // Atomic rename
         try await provider.move(from: source, to: destination)
 
-        guard checksumEnabled, let srcHex = sourceHex else { return .skipped }
+        guard checksumEnabled, let srcHex = sourceHex else {
+            Self.logger.warning("Checksum verification skipped for same-volume move destination: \(destination.path, privacy: .public)")
+            return .skipped
+        }
 
         // Sanity-check dest after rename — mismatch indicates a filesystem anomaly
         continuation.yield(.verifying(progress: 0))
@@ -231,8 +249,21 @@ actor FileOperationService {
         destination: URL,
         provider: any VFSProvider,
         conflictResolution: ConflictResolution,
-        continuation: AsyncThrowingStream<OperationState, Error>.Continuation
+        continuation: AsyncThrowingStream<OperationState, Error>.Continuation,
+        visitedDirectories: Set<String>,
+        depth: Int
     ) async throws {
+        guard depth <= Self.maximumRecursiveCopyDepth else {
+            throw OperationError.ioError(POSIXError(.ELOOP))
+        }
+
+        let sourceKey = source.resolvingSymlinksInPath().standardizedFileURL.path
+        guard !visitedDirectories.contains(sourceKey) else {
+            throw OperationError.ioError(POSIXError(.ELOOP))
+        }
+        var visitedDirectories = visitedDirectories
+        visitedDirectories.insert(sourceKey)
+
         try await provider.createDirectory(at: destination)
         let children = try await provider.listDirectory(source)
         for child in children {
@@ -242,7 +273,9 @@ actor FileOperationService {
                 try await recursiveCopy(
                     source: child.id, destination: childDest,
                     provider: provider, conflictResolution: conflictResolution,
-                    continuation: continuation
+                    continuation: continuation,
+                    visitedDirectories: visitedDirectories,
+                    depth: depth + 1
                 )
             } else {
                 guard let dest = try await resolvedDestination(
@@ -292,8 +325,22 @@ actor FileOperationService {
     // MARK: - Private helpers
 
     private func isSameVolume(_ a: URL, _ b: URL) -> Bool {
-        let va = (try? FileManager.default.attributesOfItem(atPath: a.path)[.systemNumber] as? Int) ?? -1
-        let vb = (try? FileManager.default.attributesOfItem(atPath: b.deletingLastPathComponent().path)[.systemNumber] as? Int) ?? -2
+        guard let va = Self.volumeIdentifier(for: a),
+              let vb = Self.volumeIdentifier(for: b.deletingLastPathComponent()) else {
+            return false
+        }
         return va == vb
+    }
+
+    private static func volumeIdentifier(for url: URL) -> NSNumber? {
+        try? FileManager.default.attributesOfItem(atPath: url.path)[.systemNumber] as? NSNumber
+    }
+
+    private static func isFileExistsError(_ error: Error) -> Bool {
+        if let posix = error as? POSIXError {
+            return posix.code == .EEXIST
+        }
+        let nsError = error as NSError
+        return nsError.domain == NSPOSIXErrorDomain && nsError.code == Int(EEXIST)
     }
 }

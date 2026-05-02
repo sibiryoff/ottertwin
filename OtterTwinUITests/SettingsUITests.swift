@@ -31,6 +31,10 @@ final class SettingsUITests: OtterTwinUITestCase {
 
         if toggle.value as? Int == 1 {
             toggle.click()
+            let disableButton = app.buttons["Disable Verification"]
+            if disableButton.waitForExistence(timeout: 3) {
+                disableButton.click()
+            }
         }
 
         let algPicker = app.popUpButtons["settings.algorithm"]
