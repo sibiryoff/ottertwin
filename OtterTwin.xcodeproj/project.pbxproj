@@ -17,30 +17,41 @@
 		216979B74AD6CC7D7DDF761E /* SettingsService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D29EAA4E46DE1A8BF50113 /* SettingsService.swift */; };
 		2DF6EDAB7E772B2D13D84626 /* Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72FC3FFD5054A8F1437B9343 /* Extensions.swift */; };
 		2E7E123A1277173BA4C0F9C0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 4B74631B4A0FFAA4E3739148 /* Assets.xcassets */; };
+		3D4B883E66E0263786E7CCAA /* testProgressViewCopyingHalf.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 15542DA7111B8B728CAB0BB0 /* testProgressViewCopyingHalf.1.png */; };
 		535B3E501C1597B00FAFB1C4 /* SMBConnectUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CC0244CBE78F9ECB94F33A2 /* SMBConnectUITests.swift */; };
 		5BFFE3DF4AA4B3290253BB49 /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35488D787578F510155111C1 /* FileItem.swift */; };
+		6408C0ADD10BDFC836A692FF /* OtterTwinUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9619B178A00AA5D72BB20FEC /* OtterTwinUITestCase.swift */; };
 		6CDFCECD9024B54F7398FD98 /* ChecksumServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249DA131B3BA20F1A0646312 /* ChecksumServiceTests.swift */; };
+		6D10BDD7581036C80627A0CB /* testProgressViewFailed.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 251B4C495CB2359F87095A9A /* testProgressViewFailed.1.png */; };
 		6E19FF66AC14C9711C1751EF /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A2528D5DA3E0668F5052E8 /* MainView.swift */; };
 		7133BA322F1082DE25145AE6 /* FileSortingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8061E056F3B2B21FC59C7D3 /* FileSortingTests.swift */; };
 		78A96227594F7E28407D2C53 /* SMBService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3255FB702268303E805C6D6E /* SMBService.swift */; };
 		7B79EEF2E71C0D51CA2FFB57 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F67CD1397FB940E3BC916CC0 /* SettingsView.swift */; };
+		7BC346B8AE5261D974ED0B9A /* testProgressViewVerifying.1.png in Resources */ = {isa = PBXBuildFile; fileRef = CC1066A1211C00EF8DE355C4 /* testProgressViewVerifying.1.png */; };
+		871800C0F7619085DE355171 /* testSMBConnectViewEmpty.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 27D1458CE658A4DA6E931BF8 /* testSMBConnectViewEmpty.1.png */; };
 		87FE373643697A9BEE7F04DE /* FileOperationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC9B3F192B42D565D52E0D2 /* FileOperationServiceTests.swift */; };
 		89C7C627F61FF0FC0DF6E853 /* FileTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C565DF821D8C725234A0FE64 /* FileTableView.swift */; };
+		8BE4E9FD6530E0FEFF86A366 /* testSettingsViewChecksumDisabled.1.png in Resources */ = {isa = PBXBuildFile; fileRef = DCBF4F7E24CB4B99F5800788 /* testSettingsViewChecksumDisabled.1.png */; };
 		8DAB438ED7AFF496E02881AE /* OperationProgressView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C192A59603D6A2509ED873F /* OperationProgressView.swift */; };
 		8FCFE2EB73ED8040D4305146 /* SettingsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A5BFAAC8554E44ADE75E16 /* SettingsUITests.swift */; };
 		9475FF6A5F5BF4C423742380 /* ScopedAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E1C077EFB6D6975C34C00A /* ScopedAccess.swift */; };
 		9C0356F59623915276AC5E95 /* ToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5585948090F14B80DA374DE0 /* ToolbarView.swift */; };
 		A255DC549EEA4AE0A444267B /* ConnectionInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3BAA5EE54E3E93CA2D6D11A /* ConnectionInfo.swift */; };
 		AB7690B9BA74E9D1F2B4C83D /* OtterTwinApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E11A23A4824A418047396C46 /* OtterTwinApp.swift */; };
+		ADB9BFCB0CC3457B792D845D /* testProgressViewComplete.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 61CFEFB2792A2D5B3875FA9A /* testProgressViewComplete.1.png */; };
 		AE937A04028310A67E810E23 /* FileTableUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8694ECAA0CE6147FD91F230D /* FileTableUITests.swift */; };
+		B8C837F83F4CA7F7F0A49C48 /* testProgressViewPending.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 1CF5E532FA7F06A4E112BF4E /* testProgressViewPending.1.png */; };
 		BEDABEEB5ADE623FC6FA0A55 /* FileOperationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81D227B86718B9FC4B6DCFBE /* FileOperationService.swift */; };
 		C239EB549D8046A403BF24E0 /* ChecksumService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56B28E864E097A0B95E07AA /* ChecksumService.swift */; };
 		C6D1F2FBBB7C7C2EF146376E /* AppLaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AEBA331013F6D6202C76310 /* AppLaunchTests.swift */; };
 		C7EC62F98790AB67186C00D4 /* ToolbarUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 766E921915665BB3B8A63D3E /* ToolbarUITests.swift */; };
 		D379D4EF72F094C98FAA8DA8 /* LocalProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58F6B55DD82AE2A0C3C87DAB /* LocalProvider.swift */; };
+		DAC63B7F23A256C7331784A8 /* testProgressViewCancelled.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 4482043EEF9AEFC1956E301F /* testProgressViewCancelled.1.png */; };
 		E84235925D920304DF560BBD /* NetFS.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9BC4388CCF1C6F3938345DB4 /* NetFS.framework */; };
 		E9CB0EE345B1356705E01C1F /* SMBProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 932156837B64DF92DF1C5058 /* SMBProvider.swift */; };
 		F0841951BBA840F6521D2AA9 /* SMBConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000C520A099AEBB457AB87AA /* SMBConnectView.swift */; };
+		F70CA6674054AB7226792AC7 /* testProgressViewChecksumSkipped.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 2E93A69F7FF8C4D8A922CDDD /* testProgressViewChecksumSkipped.1.png */; };
+		FC4D0C63D4287A33182DA9EB /* testSettingsViewDefaults.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 95C529FFE6FAA64E9FF5420D /* testSettingsViewDefaults.1.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,17 +75,24 @@
 		000C520A099AEBB457AB87AA /* SMBConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBConnectView.swift; sourceTree = "<group>"; };
 		0AEBA331013F6D6202C76310 /* AppLaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchTests.swift; sourceTree = "<group>"; };
 		0C258159133504A712DDC6B8 /* SnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotTests.swift; sourceTree = "<group>"; };
+		15542DA7111B8B728CAB0BB0 /* testProgressViewCopyingHalf.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProgressViewCopyingHalf.1.png; sourceTree = "<group>"; };
+		1CF5E532FA7F06A4E112BF4E /* testProgressViewPending.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProgressViewPending.1.png; sourceTree = "<group>"; };
 		209010625CC0CD6A271DD2B6 /* OtterTwinTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OtterTwinTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		249DA131B3BA20F1A0646312 /* ChecksumServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecksumServiceTests.swift; sourceTree = "<group>"; };
+		251B4C495CB2359F87095A9A /* testProgressViewFailed.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProgressViewFailed.1.png; sourceTree = "<group>"; };
+		27D1458CE658A4DA6E931BF8 /* testSMBConnectViewEmpty.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSMBConnectViewEmpty.1.png; sourceTree = "<group>"; };
 		2A867997FAE4C66F43D14EAA /* LocalProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalProviderTests.swift; sourceTree = "<group>"; };
+		2E93A69F7FF8C4D8A922CDDD /* testProgressViewChecksumSkipped.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProgressViewChecksumSkipped.1.png; sourceTree = "<group>"; };
 		3255FB702268303E805C6D6E /* SMBService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBService.swift; sourceTree = "<group>"; };
 		34E1C077EFB6D6975C34C00A /* ScopedAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScopedAccess.swift; sourceTree = "<group>"; };
 		35488D787578F510155111C1 /* FileItem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItem.swift; sourceTree = "<group>"; };
 		3CC0244CBE78F9ECB94F33A2 /* SMBConnectUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBConnectUITests.swift; sourceTree = "<group>"; };
 		417C6C522CADBBF479E77687 /* OtterTwin.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OtterTwin.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		4482043EEF9AEFC1956E301F /* testProgressViewCancelled.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProgressViewCancelled.1.png; sourceTree = "<group>"; };
 		4B74631B4A0FFAA4E3739148 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5585948090F14B80DA374DE0 /* ToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarView.swift; sourceTree = "<group>"; };
 		58F6B55DD82AE2A0C3C87DAB /* LocalProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalProvider.swift; sourceTree = "<group>"; };
+		61CFEFB2792A2D5B3875FA9A /* testProgressViewComplete.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProgressViewComplete.1.png; sourceTree = "<group>"; };
 		72A2528D5DA3E0668F5052E8 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		72FC3FFD5054A8F1437B9343 /* Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Extensions.swift; sourceTree = "<group>"; };
 		766E921915665BB3B8A63D3E /* ToolbarUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarUITests.swift; sourceTree = "<group>"; };
@@ -84,12 +102,16 @@
 		8694ECAA0CE6147FD91F230D /* FileTableUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTableUITests.swift; sourceTree = "<group>"; };
 		8C192A59603D6A2509ED873F /* OperationProgressView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OperationProgressView.swift; sourceTree = "<group>"; };
 		932156837B64DF92DF1C5058 /* SMBProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBProvider.swift; sourceTree = "<group>"; };
+		95C529FFE6FAA64E9FF5420D /* testSettingsViewDefaults.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSettingsViewDefaults.1.png; sourceTree = "<group>"; };
+		9619B178A00AA5D72BB20FEC /* OtterTwinUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtterTwinUITestCase.swift; sourceTree = "<group>"; };
 		9BC4388CCF1C6F3938345DB4 /* NetFS.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = NetFS.framework; sourceTree = "<group>"; };
 		A2384162BAEF697035001D92 /* FilePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePanelView.swift; sourceTree = "<group>"; };
 		A56B28E864E097A0B95E07AA /* ChecksumService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecksumService.swift; sourceTree = "<group>"; };
 		AFD68162CD4314AE29CC6F29 /* FileItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemTests.swift; sourceTree = "<group>"; };
 		C565DF821D8C725234A0FE64 /* FileTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTableView.swift; sourceTree = "<group>"; };
+		CC1066A1211C00EF8DE355C4 /* testProgressViewVerifying.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProgressViewVerifying.1.png; sourceTree = "<group>"; };
 		D191D9CF5AECAA32C258E119 /* VFSProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VFSProvider.swift; sourceTree = "<group>"; };
+		DCBF4F7E24CB4B99F5800788 /* testSettingsViewChecksumDisabled.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSettingsViewChecksumDisabled.1.png; sourceTree = "<group>"; };
 		E11A23A4824A418047396C46 /* OtterTwinApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtterTwinApp.swift; sourceTree = "<group>"; };
 		E3BAA5EE54E3E93CA2D6D11A /* ConnectionInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionInfo.swift; sourceTree = "<group>"; };
 		E3D29EAA4E46DE1A8BF50113 /* SettingsService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsService.swift; sourceTree = "<group>"; };
@@ -130,6 +152,14 @@
 			path = Services;
 			sourceTree = "<group>";
 		};
+		16FF5CCB923192CB0B185FC2 /* __Snapshots__ */ = {
+			isa = PBXGroup;
+			children = (
+				2068B3610C1E93B3911634CE /* SnapshotTests */,
+			);
+			path = __Snapshots__;
+			sourceTree = "<group>";
+		};
 		1841D597D436B9EC7A2AB6D8 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -138,11 +168,29 @@
 			name = Frameworks;
 			sourceTree = "<group>";
 		};
+		2068B3610C1E93B3911634CE /* SnapshotTests */ = {
+			isa = PBXGroup;
+			children = (
+				4482043EEF9AEFC1956E301F /* testProgressViewCancelled.1.png */,
+				2E93A69F7FF8C4D8A922CDDD /* testProgressViewChecksumSkipped.1.png */,
+				61CFEFB2792A2D5B3875FA9A /* testProgressViewComplete.1.png */,
+				15542DA7111B8B728CAB0BB0 /* testProgressViewCopyingHalf.1.png */,
+				251B4C495CB2359F87095A9A /* testProgressViewFailed.1.png */,
+				1CF5E532FA7F06A4E112BF4E /* testProgressViewPending.1.png */,
+				CC1066A1211C00EF8DE355C4 /* testProgressViewVerifying.1.png */,
+				DCBF4F7E24CB4B99F5800788 /* testSettingsViewChecksumDisabled.1.png */,
+				95C529FFE6FAA64E9FF5420D /* testSettingsViewDefaults.1.png */,
+				27D1458CE658A4DA6E931BF8 /* testSMBConnectViewEmpty.1.png */,
+			);
+			path = SnapshotTests;
+			sourceTree = "<group>";
+		};
 		2A307B90250B108FE23A069A /* OtterTwinUITests */ = {
 			isa = PBXGroup;
 			children = (
 				0AEBA331013F6D6202C76310 /* AppLaunchTests.swift */,
 				8694ECAA0CE6147FD91F230D /* FileTableUITests.swift */,
+				9619B178A00AA5D72BB20FEC /* OtterTwinUITestCase.swift */,
 				76A5BFAAC8554E44ADE75E16 /* SettingsUITests.swift */,
 				3CC0244CBE78F9ECB94F33A2 /* SMBConnectUITests.swift */,
 				766E921915665BB3B8A63D3E /* ToolbarUITests.swift */,
@@ -191,6 +239,7 @@
 				F8061E056F3B2B21FC59C7D3 /* FileSortingTests.swift */,
 				2A867997FAE4C66F43D14EAA /* LocalProviderTests.swift */,
 				0C258159133504A712DDC6B8 /* SnapshotTests.swift */,
+				16FF5CCB923192CB0B185FC2 /* __Snapshots__ */,
 			);
 			path = OtterTwinTests;
 			sourceTree = "<group>";
@@ -275,6 +324,7 @@
 			buildConfigurationList = BE4CD5F14CC2E8F8CD4BE2BE /* Build configuration list for PBXNativeTarget "OtterTwinTests" */;
 			buildPhases = (
 				E94C172005A7B338179C7A4E /* Sources */,
+				E27BFA3643EF10C210026E41 /* Resources */,
 				012C688F4A0A469A70CDDCEF /* Frameworks */,
 			);
 			buildRules = (
@@ -360,6 +410,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E27BFA3643EF10C210026E41 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DAC63B7F23A256C7331784A8 /* testProgressViewCancelled.1.png in Resources */,
+				F70CA6674054AB7226792AC7 /* testProgressViewChecksumSkipped.1.png in Resources */,
+				ADB9BFCB0CC3457B792D845D /* testProgressViewComplete.1.png in Resources */,
+				3D4B883E66E0263786E7CCAA /* testProgressViewCopyingHalf.1.png in Resources */,
+				6D10BDD7581036C80627A0CB /* testProgressViewFailed.1.png in Resources */,
+				B8C837F83F4CA7F7F0A49C48 /* testProgressViewPending.1.png in Resources */,
+				7BC346B8AE5261D974ED0B9A /* testProgressViewVerifying.1.png in Resources */,
+				871800C0F7619085DE355171 /* testSMBConnectViewEmpty.1.png in Resources */,
+				8BE4E9FD6530E0FEFF86A366 /* testSettingsViewChecksumDisabled.1.png in Resources */,
+				FC4D0C63D4287A33182DA9EB /* testSettingsViewDefaults.1.png in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -396,6 +463,7 @@
 			files = (
 				C6D1F2FBBB7C7C2EF146376E /* AppLaunchTests.swift in Sources */,
 				AE937A04028310A67E810E23 /* FileTableUITests.swift in Sources */,
+				6408C0ADD10BDFC836A692FF /* OtterTwinUITestCase.swift in Sources */,
 				535B3E501C1597B00FAFB1C4 /* SMBConnectUITests.swift in Sources */,
 				8FCFE2EB73ED8040D4305146 /* SettingsUITests.swift in Sources */,
 				C7EC62F98790AB67186C00D4 /* ToolbarUITests.swift in Sources */,

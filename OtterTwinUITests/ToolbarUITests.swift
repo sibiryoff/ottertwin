@@ -1,20 +1,6 @@
 import XCTest
 
-final class ToolbarUITests: XCTestCase {
-    var app: XCUIApplication!
-
-    override func setUp() {
-        super.setUp()
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launch()
-    }
-
-    override func tearDown() {
-        app.terminate()
-        super.tearDown()
-    }
-
+final class ToolbarUITests: OtterTwinUITestCase {
     // MARK: - Initial State (no selection)
 
     func testCopyButtonDisabledWithoutSelection() {
@@ -47,10 +33,7 @@ final class ToolbarUITests: XCTestCase {
     func testOperationButtonsEnabledAfterSelection() {
         let table = app.tables["fileTable.left"]
         XCTAssertTrue(table.waitForExistence(timeout: 5))
-
-        let hasRows = NSPredicate(format: "count > 0")
-        let rowsLoaded = XCTNSPredicateExpectation(predicate: hasRows, object: table.tableRows)
-        wait(for: [rowsLoaded], timeout: 10)
+        waitForRows(in: table)
 
         table.tableRows.element(boundBy: 0).click()
 
@@ -64,7 +47,6 @@ final class ToolbarUITests: XCTestCase {
     func testRefreshKeyboardShortcutCmdR() {
         XCTAssertTrue(app.buttons["toolbar.refresh"].waitForExistence(timeout: 5))
         app.windows.firstMatch.typeKey("r", modifierFlags: .command)
-        // After refresh, the table should still be present (no crash)
         XCTAssertTrue(app.tables["fileTable.left"].waitForExistence(timeout: 5))
     }
 }

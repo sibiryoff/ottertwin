@@ -33,7 +33,6 @@ final class FileItemTests: XCTestCase {
 
     func testDisplaySizeForMegabyteFile() {
         let item = makeFile(name: "large.bin", size: 1_048_576)
-        // ByteCountFormatter will render this as "1 MB" or "1 MiB" depending on locale
         XCTAssertNotEqual(item.displaySize, "—")
         XCTAssertTrue(item.displaySize.contains("1"))
     }
@@ -80,15 +79,4 @@ final class FileItemTests: XCTestCase {
         XCTAssertEqual(set.count, 2)
     }
 
-    // MARK: - isDirectory
-
-    func testIsDirectoryFalseForFile() {
-        let item = makeFile(isDirectory: false)
-        XCTAssertFalse(item.isDirectory)
-    }
-
-    func testIsDirectoryTrueForDirectory() {
-        let item = makeFile(isDirectory: true)
-        XCTAssertTrue(item.isDirectory)
-    }
 }

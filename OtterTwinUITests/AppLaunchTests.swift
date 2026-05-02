@@ -1,20 +1,6 @@
 import XCTest
 
-final class AppLaunchTests: XCTestCase {
-    var app: XCUIApplication!
-
-    override func setUp() {
-        super.setUp()
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launch()
-    }
-
-    override func tearDown() {
-        app.terminate()
-        super.tearDown()
-    }
-
+final class AppLaunchTests: OtterTwinUITestCase {
     func testAppLaunchesWithoutCrash() {
         XCTAssertEqual(app.state, .runningForeground)
     }
@@ -35,9 +21,6 @@ final class AppLaunchTests: XCTestCase {
     func testFilePanelsLoadContent() {
         let leftTable = app.tables["fileTable.left"]
         XCTAssertTrue(leftTable.waitForExistence(timeout: 5))
-
-        let hasRows = NSPredicate(format: "count > 0")
-        let expectation = XCTNSPredicateExpectation(predicate: hasRows, object: leftTable.tableRows)
-        wait(for: [expectation], timeout: 10)
+        waitForRows(in: leftTable)
     }
 }

@@ -1,20 +1,6 @@
 import XCTest
 
-final class SMBConnectUITests: XCTestCase {
-    var app: XCUIApplication!
-
-    override func setUp() {
-        super.setUp()
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launch()
-    }
-
-    override func tearDown() {
-        app.terminate()
-        super.tearDown()
-    }
-
+final class SMBConnectUITests: OtterTwinUITestCase {
     private func openSMBDialog() {
         let smbButton = app.buttons["panel.left.smb"]
         XCTAssertTrue(smbButton.waitForExistence(timeout: 5))
@@ -39,7 +25,6 @@ final class SMBConnectUITests: XCTestCase {
         app.textFields["smb.host"].click()
         app.textFields["smb.host"].typeText("myserver")
 
-        // Share is still empty, so Connect should remain disabled
         XCTAssertFalse(app.buttons["smb.connect"].isEnabled)
     }
 
@@ -60,8 +45,7 @@ final class SMBConnectUITests: XCTestCase {
         app.buttons["smb.cancel"].click()
 
         let dismissed = NSPredicate(format: "exists == false")
-        let cancelButton = app.buttons["smb.cancel"]
-        let expectation = XCTNSPredicateExpectation(predicate: dismissed, object: cancelButton)
+        let expectation = XCTNSPredicateExpectation(predicate: dismissed, object: app.buttons["smb.cancel"])
         wait(for: [expectation], timeout: 3)
     }
 

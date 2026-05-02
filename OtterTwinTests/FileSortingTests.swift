@@ -1,8 +1,7 @@
 import XCTest
 @testable import OtterTwin
 
-// Tests for the sorting algorithm used in FilePanelView.sortedItems.
-// Directories always sort before files; within each group the chosen key applies.
+// Directories always sort before files; within each group the chosen sort key applies.
 final class FileSortingTests: XCTestCase {
     private let now = Date()
 

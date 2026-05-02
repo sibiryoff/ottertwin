@@ -1,29 +1,11 @@
 import XCTest
 
-final class SettingsUITests: XCTestCase {
-    var app: XCUIApplication!
-
-    override func setUp() {
-        super.setUp()
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launch()
-    }
-
-    override func tearDown() {
-        app.terminate()
-        super.tearDown()
-    }
-
+final class SettingsUITests: OtterTwinUITestCase {
     func testSettingsButtonOpensWindow() {
         XCTAssertTrue(app.buttons["toolbar.settings"].waitForExistence(timeout: 5))
         app.buttons["toolbar.settings"].click()
 
-        // Settings window should appear
-        let settingsExists = NSPredicate(format: "exists == true")
-        let toggle = app.checkBoxes["settings.checksumEnabled"]
-        let expectation = XCTNSPredicateExpectation(predicate: settingsExists, object: toggle)
-        wait(for: [expectation], timeout: 5)
+        XCTAssertTrue(app.checkBoxes["settings.checksumEnabled"].waitForExistence(timeout: 5))
     }
 
     func testChecksumToggleIsPresent() {
@@ -47,12 +29,10 @@ final class SettingsUITests: XCTestCase {
         let toggle = app.checkBoxes["settings.checksumEnabled"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 5))
 
-        // If checksum is currently enabled, disable it
         if toggle.value as? Int == 1 {
             toggle.click()
         }
 
-        // Algorithm picker should be disabled when checksum is off
         let algPicker = app.popUpButtons["settings.algorithm"]
         if algPicker.waitForExistence(timeout: 3) {
             XCTAssertFalse(algPicker.isEnabled)

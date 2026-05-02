@@ -1,28 +1,6 @@
 import XCTest
 
-final class FileTableUITests: XCTestCase {
-    var app: XCUIApplication!
-
-    override func setUp() {
-        super.setUp()
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launch()
-    }
-
-    override func tearDown() {
-        app.terminate()
-        super.tearDown()
-    }
-
-    // MARK: - Helpers
-
-    private func waitForRows(in table: XCUIElement, timeout: TimeInterval = 10) {
-        let hasRows = NSPredicate(format: "count > 0")
-        let expectation = XCTNSPredicateExpectation(predicate: hasRows, object: table.tableRows)
-        wait(for: [expectation], timeout: timeout)
-    }
-
+final class FileTableUITests: OtterTwinUITestCase {
     // MARK: - Content Loading
 
     func testLeftTableLoadsHomeDirectory() {
@@ -62,8 +40,6 @@ final class FileTableUITests: XCTestCase {
         }
 
         table.tableRows.element(boundBy: 0).click()
-        table.tableRows.element(boundBy: 1).click(forDuration: 0, thenDragTo: table.tableRows.element(boundBy: 1), withVelocity: .default, thenHoldForDuration: 0)
-        // Cmd+click second row
         XCUIElement.perform(withKeyModifiers: .command) {
             table.tableRows.element(boundBy: 1).click()
         }
@@ -125,9 +101,7 @@ final class FileTableUITests: XCTestCase {
         leftTable.click()
         app.windows.firstMatch.typeKey("\t", modifierFlags: [])
 
-        // Right panel's table should now receive keyboard events
-        let rightTable = app.tables["fileTable.right"]
-        XCTAssertTrue(rightTable.exists)
+        XCTAssertTrue(app.tables["fileTable.right"].exists)
     }
 
     // MARK: - Column Sorting
@@ -137,12 +111,9 @@ final class FileTableUITests: XCTestCase {
         XCTAssertTrue(table.waitForExistence(timeout: 5))
         waitForRows(in: table)
 
-        // Click the "Name" column header to sort
         let nameHeader = table.tableColumns["name"]
-        if nameHeader.exists {
-            nameHeader.click()
-            // Table should still have rows after sort
-            XCTAssertGreaterThan(table.tableRows.count, 0)
-        }
+        XCTAssertTrue(nameHeader.exists)
+        nameHeader.click()
+        XCTAssertGreaterThan(table.tableRows.count, 0)
     }
 }
