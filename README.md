@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="ottertwin_logo.png" alt="OtterTwin logo" width="360">
+</p>
+
 # OtterTwin
 
 A macOS two-panel file manager designed for safe file transfers to NAS devices over SMB. Inspired by Total Commander.
