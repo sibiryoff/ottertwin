@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct FilePanelView: View {
+    let panelID: String
     @Binding var path: URL
     @Binding var selection: Set<URL>
     let isActive: Bool
@@ -16,7 +17,7 @@ struct FilePanelView: View {
     var body: some View {
         VStack(spacing: 0) {
             // Location shortcuts
-            LocationBar(currentPath: path, onNavigate: { url in path = url }, onConnectSMB: { showSMBConnect = true })
+            LocationBar(panelID: panelID, currentPath: path, onNavigate: { url in path = url }, onConnectSMB: { showSMBConnect = true })
                 .background(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
 
             Divider()
@@ -37,6 +38,7 @@ struct FilePanelView: View {
                     items: sortedItems,
                     selection: $selection,
                     isActive: isActive,
+                    accessibilityID: panelID,
                     onDoubleClick: navigate,
                     onActivate: onActivate,
                     onEnterKey: navigateSelected,
@@ -47,6 +49,7 @@ struct FilePanelView: View {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(.regularMaterial)
+                        .accessibilityIdentifier("panel.\(panelID).loading")
                 } else if let err = errorMessage {
                     Text(err)
                         .foregroundStyle(.red)
@@ -55,10 +58,12 @@ struct FilePanelView: View {
                         .padding()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(.regularMaterial)
+                        .accessibilityIdentifier("panel.\(panelID).error")
                 }
             }
         }
         .frame(minWidth: 300)
+        .accessibilityIdentifier("panel.\(panelID)")
         .task(id: path) { await loadDirectory() }
         .sheet(isPresented: $showSMBConnect) {
             SMBConnectView(onConnect: { provider in
@@ -127,6 +132,7 @@ struct FilePanelView: View {
 // MARK: - LocationBar
 
 private struct LocationBar: View {
+    let panelID: String
     let currentPath: URL
     let onNavigate: (URL) -> Void
     let onConnectSMB: () -> Void
@@ -163,6 +169,7 @@ private struct LocationBar: View {
                                 ? Color.accentColor.opacity(0.15) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 5)
                         )
+                        .accessibilityIdentifier("panel.\(panelID).location.\(loc.label.lowercased().replacingOccurrences(of: "/", with: "root"))")
                     }
                 }
                 .padding(.horizontal, 6)
@@ -180,6 +187,7 @@ private struct LocationBar: View {
             }
             .buttonStyle(.plain)
             .padding(5)
+            .accessibilityIdentifier("panel.\(panelID).smb")
         }
         .padding(.vertical, 2)
         .frame(height: 30)

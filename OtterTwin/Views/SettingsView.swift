@@ -18,6 +18,7 @@ struct SettingsView: View {
         Form {
             Section("Integrity") {
                 Toggle("Verify checksums after copy/move", isOn: $settings.checksumEnabled)
+                    .accessibilityIdentifier("settings.checksumEnabled")
 
                 Picker("Algorithm", selection: $settings.checksumAlgorithm) {
                     ForEach(ChecksumAlgorithm.allCases) { alg in
@@ -25,6 +26,7 @@ struct SettingsView: View {
                     }
                 }
                 .disabled(!settings.checksumEnabled)
+                .accessibilityIdentifier("settings.algorithm")
 
                 HStack {
                     Text("Read chunk size")
@@ -32,6 +34,7 @@ struct SettingsView: View {
                     TextField("", text: $chunkSizeText)
                         .frame(width: 60)
                         .multilineTextAlignment(.trailing)
+                        .accessibilityIdentifier("settings.chunkSize")
                         .onChange(of: chunkSizeText) { _, newValue in
                             if let v = Int(newValue), v > 0 {
                                 settings.chunkSizeBytes = v * chunkUnit.bytes
@@ -43,6 +46,7 @@ struct SettingsView: View {
                         }
                     }
                     .frame(width: 60)
+                    .accessibilityIdentifier("settings.chunkUnit")
                     .onChange(of: chunkUnit) { _, newUnit in
                         if let v = Int(chunkSizeText), v > 0 {
                             settings.chunkSizeBytes = v * newUnit.bytes

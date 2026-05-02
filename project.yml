@@ -1,4 +1,10 @@
 name: OtterTwin
+
+packages:
+  SnapshotTesting:
+    url: https://github.com/pointfreeco/swift-snapshot-testing
+    from: 1.17.0
+
 options:
   bundleIdPrefix: com.mas
   deploymentTarget:
@@ -42,8 +48,21 @@ targets:
       - OtterTwinTests
     dependencies:
       - target: OtterTwin
+      - package: SnapshotTesting
+        product: SnapshotTesting
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mas.ottertwinTests
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OtterTwin.app/Contents/MacOS/OtterTwin"
         BUNDLE_LOADER: "$(TEST_HOST)"
+
+  OtterTwinUITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - OtterTwinUITests
+    dependencies:
+      - target: OtterTwin
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mas.ottertwinUITests

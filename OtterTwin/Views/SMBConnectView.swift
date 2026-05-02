@@ -20,11 +20,15 @@ struct SMBConnectView: View {
             Form {
                 TextField("Host", text: $host)
                     .textContentType(.URL)
+                    .accessibilityIdentifier("smb.host")
                 TextField("Share", text: $share)
+                    .accessibilityIdentifier("smb.share")
                 TextField("Username", text: $username)
                     .textContentType(.username)
+                    .accessibilityIdentifier("smb.username")
                 SecureField("Password", text: $password)
                     .textContentType(.password)
+                    .accessibilityIdentifier("smb.password")
             }
             .formStyle(.grouped)
 
@@ -37,9 +41,11 @@ struct SMBConnectView: View {
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }
+                    .accessibilityIdentifier("smb.cancel")
                 Button("Connect") { Task { await connect() } }
                     .disabled(host.isEmpty || share.isEmpty || isConnecting)
                     .keyboardShortcut(.defaultAction)
+                    .accessibilityIdentifier("smb.connect")
             }
 
             if isConnecting {

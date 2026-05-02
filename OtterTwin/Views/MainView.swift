@@ -31,6 +31,7 @@ struct MainView: View {
             Divider()
             HSplitView {
                 FilePanelView(
+                    panelID: "left",
                     path: $appState.leftPath,
                     selection: $appState.leftSelection,
                     isActive: appState.activePanel == .left,
@@ -38,6 +39,7 @@ struct MainView: View {
                 )
 
                 FilePanelView(
+                    panelID: "right",
                     path: $appState.rightPath,
                     selection: $appState.rightSelection,
                     isActive: appState.activePanel == .right,

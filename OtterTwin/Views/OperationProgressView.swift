@@ -55,10 +55,13 @@ struct OperationProgressView: View {
                 if case .complete = state {
                     Button("Done") { onCancel() }
                         .keyboardShortcut(.defaultAction)
+                        .accessibilityIdentifier("progress.done")
                 } else if case .failed = state {
                     Button("Close") { onCancel() }
+                        .accessibilityIdentifier("progress.close")
                 } else {
                     Button("Cancel", role: .cancel) { onCancel() }
+                        .accessibilityIdentifier("progress.cancel")
                 }
             }
         }

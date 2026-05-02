@@ -7,6 +7,7 @@ struct FileTableView: NSViewRepresentable {
     let items: [FileItem]
     @Binding var selection: Set<URL>
     let isActive: Bool
+    var accessibilityID: String = "fileTable"
     let onDoubleClick: (FileItem) -> Void
     var onActivate: () -> Void = {}
     var onEnterKey: () -> Void = {}
@@ -62,6 +63,8 @@ struct FileTableView: NSViewRepresentable {
             key: "name", ascending: true,
             selector: #selector(NSString.localizedStandardCompare)
         )]
+
+        tableView.setAccessibilityIdentifier("fileTable.\(accessibilityID)")
 
         context.coordinator.tableView = tableView
         let coordinator = context.coordinator

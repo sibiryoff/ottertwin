@@ -13,12 +13,15 @@ struct ToolbarView: View {
             Button("F5  Copy") { onCopy() }
                 .disabled(!hasSelection)
                 .keyboardShortcut("c", modifiers: [])  // F5 handled via onKeyPress below
+                .accessibilityIdentifier("toolbar.copy")
 
             Button("F6  Move") { onMove() }
                 .disabled(!hasSelection)
+                .accessibilityIdentifier("toolbar.move")
 
             Button("F8  Delete") { deleteSelected() }
                 .disabled(!hasSelection)
+                .accessibilityIdentifier("toolbar.delete")
 
             Spacer()
 
@@ -30,6 +33,7 @@ struct ToolbarView: View {
             }
             .keyboardShortcut("r")
             .help("Refresh (⌘R)")
+            .accessibilityIdentifier("toolbar.refresh")
 
             Button {
                 openSettings()
@@ -38,6 +42,7 @@ struct ToolbarView: View {
                     .labelStyle(.iconOnly)
             }
             .help("Settings (⌘,)")
+            .accessibilityIdentifier("toolbar.settings")
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
