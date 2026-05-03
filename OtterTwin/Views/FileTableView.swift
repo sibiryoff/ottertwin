@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Quartz
 
 // MARK: - SwiftUI wrapper
 
@@ -196,6 +197,10 @@ struct FileTableView: NSViewRepresentable {
             onActivate()
             let selected = tv.selectedRowIndexes.compactMap { items[safe: $0]?.id }
             selection = Set(selected)
+            (tableView as? FileListView)?.previewItems = selected
+            if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
+                QLPreviewPanel.shared().reloadData()
+            }
         }
 
         func tableView(_ tableView: NSTableView, sortDescriptorsDidChange _: [NSSortDescriptor]) {
@@ -212,16 +217,38 @@ struct FileTableView: NSViewRepresentable {
 
 // MARK: - NSTableView subclass for keyboard handling
 
-private final class FileListView: NSTableView {
+private final class FileListView: NSTableView, QLPreviewPanelDataSource, QLPreviewPanelController {
     var onEnterKey: (() -> Void)?
     var onBackspace: (() -> Void)?
+    var previewItems: [URL] = []
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 36, 76: onEnterKey?()   // Return, numpad Enter
-        case 51:     onBackspace?()  // Delete/Backspace
+        case 36, 76: onEnterKey?()    // Return, numpad Enter
+        case 49:     toggleQuickLook() // Space — Quick Look
+        case 51:     onBackspace?()   // Delete/Backspace
         default:     super.keyDown(with: event)
         }
+    }
+
+    private func toggleQuickLook() {
+        guard !previewItems.isEmpty else { return }
+        if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
+            QLPreviewPanel.shared().orderOut(nil)
+        } else {
+            QLPreviewPanel.shared().makeKeyAndOrderFront(nil)
+        }
+    }
+
+    // QLPreviewPanelController — called on the responder chain by QLPreviewPanel
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+    override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = self }
+    override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = nil }
+
+    // QLPreviewPanelDataSource
+    func numberOfPreviewItems(in panel: QLPreviewPanel!) -> Int { previewItems.count }
+    func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> QLPreviewItem! {
+        previewItems[index] as NSURL
     }
 }
 

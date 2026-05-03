@@ -40,6 +40,8 @@ targets:
     dependencies:
       - framework: NetFS.framework
         embed: false
+      - framework: Quartz.framework
+        embed: false
 
   OtterTwinTests:
     type: bundle.unit-test
