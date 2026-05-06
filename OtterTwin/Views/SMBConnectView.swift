@@ -43,7 +43,7 @@ struct SMBConnectView: View {
                 Button("Cancel", role: .cancel) { dismiss() }
                     .accessibilityIdentifier("smb.cancel")
                 Button("Connect") { Task { await connect() } }
-                    .disabled(host.isEmpty || share.isEmpty || isConnecting)
+                    .disabled(!canConnect)
                     .keyboardShortcut(.defaultAction)
                     .accessibilityIdentifier("smb.connect")
             }
@@ -55,6 +55,9 @@ struct SMBConnectView: View {
         .padding(20)
         .frame(width: 380)
         .onAppear { loadSavedCredentials() }
+        .onChange(of: host) { _, _ in loadSavedCredentials() }
+        .onChange(of: share) { _, _ in loadSavedCredentials() }
+        .onChange(of: username) { _, _ in loadSavedCredentials() }
     }
 
     // MARK: - Connect
@@ -63,7 +66,13 @@ struct SMBConnectView: View {
         isConnecting = true
         errorMessage = nil
 
-        let info = ConnectionInfo(host: host, share: share, username: username)
+        let info = ConnectionInfo(host: normalizedHost, share: normalizedShare, username: normalizedUsername)
+        guard info.smbURL != nil else {
+            errorMessage = "Host and share may contain only letters, numbers, dots, underscores, and hyphens."
+            isConnecting = false
+            return
+        }
+
         let provider = SMBProvider(connection: info)
         do {
             try await provider.connect(password: password)
@@ -77,28 +86,49 @@ struct SMBConnectView: View {
 
     // MARK: - Keychain helpers
 
-    private func keychainAccount() -> String { "\(username)@\(host)/\(share)" }
+    private var normalizedHost: String { host.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var normalizedShare: String { share.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var normalizedUsername: String { username.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private var canConnect: Bool {
+        !isConnecting &&
+        !normalizedHost.isEmpty &&
+        !normalizedShare.isEmpty &&
+        !normalizedUsername.isEmpty &&
+        ConnectionInfo.isValidSMBComponent(normalizedHost) &&
+        ConnectionInfo.isValidSMBComponent(normalizedShare)
+    }
+
+    private func keychainAccount() -> String {
+        "\(normalizedUsername)@\(normalizedHost)/\(normalizedShare)"
+    }
 
     private func saveCredentials() {
         let account = keychainAccount()
         let data = password.data(using: .utf8)!
 
-        let query: [CFString: Any] = [
+        let lookupQuery: [CFString: Any] = [
             kSecClass: kSecClassInternetPassword,
-            kSecAttrServer: host,
+            kSecAttrServer: normalizedHost,
+            kSecAttrAccount: account
+        ]
+        let addQuery: [CFString: Any] = [
+            kSecClass: kSecClassInternetPassword,
+            kSecAttrServer: normalizedHost,
             kSecAttrAccount: account,
+            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             kSecValueData: data
         ]
-        SecItemDelete(query as CFDictionary)
-        SecItemAdd(query as CFDictionary, nil)
+        SecItemDelete(lookupQuery as CFDictionary)
+        SecItemAdd(addQuery as CFDictionary, nil)
     }
 
     private func loadSavedCredentials() {
-        guard !host.isEmpty, !share.isEmpty, !username.isEmpty else { return }
+        guard !normalizedHost.isEmpty, !normalizedShare.isEmpty, !normalizedUsername.isEmpty else { return }
         let account = keychainAccount()
         let query: [CFString: Any] = [
             kSecClass: kSecClassInternetPassword,
-            kSecAttrServer: host,
+            kSecAttrServer: normalizedHost,
             kSecAttrAccount: account,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne

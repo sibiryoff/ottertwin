@@ -53,6 +53,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mas.ottertwinTests
+        GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OtterTwin.app/Contents/MacOS/OtterTwin"
         BUNDLE_LOADER: "$(TEST_HOST)"
 
@@ -66,3 +67,4 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mas.ottertwinUITests
+        GENERATE_INFOPLIST_FILE: YES
