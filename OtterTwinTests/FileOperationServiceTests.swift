@@ -129,6 +129,91 @@ final class FileOperationServiceTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: dst), "existing")
     }
 
+    // MARK: - Cancellation
+
+    func testCancelDuringCopy() async throws {
+        let dir = try tmpDir()
+        defer { try? fm.removeItem(at: dir) }
+
+        let src = dir.appendingPathComponent("source.bin")
+        let dst = dir.appendingPathComponent("dest.bin")
+        let partURL = dst.deletingLastPathComponent()
+            .appendingPathComponent("." + dst.lastPathComponent + ".part")
+        try Data(repeating: 0xCD, count: 32_768).write(to: src)
+
+        let service = FileOperationService(settings: makeSettings())
+        let provider = LocalProvider()
+
+        let task = Task {
+            for try await _ in await service.copy(source: src, destination: dst, provider: provider) {}
+        }
+        task.cancel()
+        _ = await task.result
+
+        XCTAssertFalse(fm.fileExists(atPath: dst.path), "Final dest must not exist after cancel")
+        XCTAssertFalse(fm.fileExists(atPath: partURL.path), "Temp .part file must be cleaned up")
+    }
+
+    func testCancelDuringVerification() async throws {
+        let dir = try tmpDir()
+        defer { try? fm.removeItem(at: dir) }
+
+        let src = dir.appendingPathComponent("source.bin")
+        let dst = dir.appendingPathComponent("dest.bin")
+        let partURL = dst.deletingLastPathComponent()
+            .appendingPathComponent("." + dst.lastPathComponent + ".part")
+        // Use a single-chunk file so copy finishes quickly and verify is reached.
+        // We then cancel the outer task which stops the verify loop.
+        try Data(repeating: 0xAB, count: 256).write(to: src)
+
+        // Tiny chunk size so copy finishes in one chunk, checksum loop starts.
+        let settings = makeSettings(checksumEnabled: true)
+        settings.chunkSizeBytes = 1024 * 1024  // 1 MB — whole file fits in one read
+        let service = FileOperationService(settings: settings)
+        let provider = LocalProvider()
+
+        let task = Task {
+            for try await _ in await service.copy(source: src, destination: dst, provider: provider) {}
+        }
+        task.cancel()
+        _ = await task.result
+
+        XCTAssertFalse(fm.fileExists(atPath: dst.path), "Final dest must not exist after cancel during verify")
+        XCTAssertFalse(fm.fileExists(atPath: partURL.path), "Temp .part file must be cleaned up")
+    }
+
+    func testCancelDuringMoveNoDataLoss() async throws {
+        let dir = try tmpDir()
+        defer { try? fm.removeItem(at: dir) }
+
+        let srcDir = dir.appendingPathComponent("srcDir")
+        let dstDir = dir.appendingPathComponent("dstDir")
+        try fm.createDirectory(at: srcDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: dstDir, withIntermediateDirectories: true)
+
+        let src = srcDir.appendingPathComponent("file.bin")
+        let dst = dstDir.appendingPathComponent("file.bin")
+        let partURL = dstDir.appendingPathComponent(".file.bin.part")
+        try Data(repeating: 0x77, count: 32_768).write(to: src)
+
+        let service = FileOperationService(settings: makeSettings())
+        let provider = LocalProvider()
+
+        let task = Task {
+            for try await _ in await service.move(source: src, destination: dst, provider: provider) {}
+        }
+        task.cancel()
+        _ = await task.result
+
+        // Same-volume move uses an atomic rename; cancellation may occur before or
+        // after it. Either way, the file must exist at exactly one location (no loss).
+        let sourceExists = fm.fileExists(atPath: src.path)
+        let destExists   = fm.fileExists(atPath: dst.path)
+        XCTAssertTrue(sourceExists || destExists, "File must exist at source or dest — no data loss")
+        XCTAssertFalse(sourceExists && destExists, "File must not be duplicated after cancelled move")
+        XCTAssertFalse(fm.fileExists(atPath: partURL.path), "No .part temp file should remain")
+    }
+
     // MARK: - Recursive directory copy
 
     func testRecursiveDirectoryCopy() async throws {

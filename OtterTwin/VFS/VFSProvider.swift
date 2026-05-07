@@ -14,14 +14,20 @@ protocol VFSProvider {
 // MARK: - ChunkedWriter
 
 /// A write sink that accepts successive Data chunks and finalises on close().
+/// Writes to a hidden `.part` temp file in the same directory; close() renames
+/// it to the final URL so a crash or cancellation never leaves a partial file
+/// at the destination.
 final class ChunkedWriter {
     private let handle: FileHandle
-    private let url: URL
+    private let tempURL: URL
+    private let finalURL: URL
 
     init(url: URL) throws {
-        FileManager.default.createFile(atPath: url.path, contents: nil)
-        handle = try FileHandle(forWritingTo: url)
-        self.url = url
+        finalURL = url
+        tempURL = url.deletingLastPathComponent()
+            .appendingPathComponent("." + url.lastPathComponent + ".part")
+        FileManager.default.createFile(atPath: tempURL.path, contents: nil)
+        handle = try FileHandle(forWritingTo: tempURL)
     }
 
     func write(_ chunk: Data) throws {
@@ -30,10 +36,11 @@ final class ChunkedWriter {
 
     func close() throws {
         try handle.close()
+        try FileManager.default.moveItem(at: tempURL, to: finalURL)
     }
 
     func abort() {
         try? handle.close()
-        try? FileManager.default.removeItem(at: url)
+        try? FileManager.default.removeItem(at: tempURL)
     }
 }
