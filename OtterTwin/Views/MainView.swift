@@ -9,10 +9,13 @@ final class AppState {
     var rightPath: URL = FileManager.default.homeDirectoryForCurrentUser
     var leftSelection: Set<URL> = []
     var rightSelection: Set<URL> = []
+    var leftProvider: any VFSProvider = LocalProvider()
+    var rightProvider: any VFSProvider = LocalProvider()
 
     var sourcePath: URL { activePanel == .left ? leftPath : rightPath }
     var destPath: URL { activePanel == .left ? rightPath : leftPath }
     var sourceSelection: Set<URL> { activePanel == .left ? leftSelection : rightSelection }
+    var sourceProvider: any VFSProvider { activePanel == .left ? leftProvider : rightProvider }
 
     func togglePanel() { activePanel = activePanel == .left ? .right : .left }
 }
