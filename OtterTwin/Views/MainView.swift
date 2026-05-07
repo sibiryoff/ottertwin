@@ -67,6 +67,7 @@ struct MainView: View {
     @State private var appState = AppState()
     @State private var showProgress = false
     @State private var currentOperation: FileOperation?
+    @State private var activeTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -101,7 +102,8 @@ struct MainView: View {
                 OperationProgressView(
                     operation: op,
                     state: op.state,
-                    onCancel: { showProgress = false }
+                    onRequestCancel: { activeTask?.cancel() },
+                    onDismiss: { showProgress = false }
                 )
             }
         }
@@ -116,12 +118,12 @@ struct MainView: View {
 
     private func triggerCopy() {
         guard !appState.sourceSelection.isEmpty else { return }
-        Task { await runOperations(kind: .copy) }
+        activeTask = Task { await runOperations(kind: .copy) }
     }
 
     private func triggerMove() {
         guard !appState.sourceSelection.isEmpty else { return }
-        Task { await runOperations(kind: .move) }
+        activeTask = Task { await runOperations(kind: .move) }
     }
 
     /// Confirm → Trash (or explicitly confirmed permanent delete) → refresh → report.
@@ -160,9 +162,14 @@ struct MainView: View {
                     currentOperation = op
                 }
             } catch {
-                let opError: OperationError = (error as? OperationError) ?? .ioError(error)
-                op.state = .failed(opError)
+                if error is CancellationError {
+                    op.state = .cancelled
+                } else {
+                    let opError: OperationError = (error as? OperationError) ?? .ioError(error)
+                    op.state = .failed(opError)
+                }
                 currentOperation = op
+                if Task.isCancelled { break }
             }
         }
         appState.leftSelection = []
