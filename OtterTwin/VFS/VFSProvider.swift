@@ -9,6 +9,12 @@ protocol VFSProvider {
     func move(from: URL, to: URL) async throws
     /// Writer target — returns a continuation that the caller pushes chunks into.
     func makeWriter(at url: URL) throws -> ChunkedWriter
+
+    /// Whether this provider can move items to the macOS Trash.
+    var supportsTrash: Bool { get }
+    /// Move `url` to the macOS Trash. Throws if Trash is not supported or the
+    /// operation fails.
+    func trash(_ url: URL) async throws
 }
 
 // MARK: - ChunkedWriter

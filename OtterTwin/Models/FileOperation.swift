@@ -51,3 +51,17 @@ enum ConflictResolution {
     case overwrite
     case rename  // appends "-2", "-3", … suffix
 }
+
+// MARK: - Delete types
+
+enum DeleteMode {
+    case trash      // Move to macOS Trash
+    case permanent  // fm.removeItem — requires explicit confirmation
+}
+
+struct DeleteResult {
+    let mode: DeleteMode
+    let succeededURLs: [URL]
+    let failedURLs: [(url: URL, error: Error)]
+    var hasFailures: Bool { !failedURLs.isEmpty }
+}

@@ -59,6 +59,12 @@ final class LocalProvider: VFSProvider {
 
     // MARK: - Delete
 
+    var supportsTrash: Bool { true }
+
+    func trash(_ url: URL) async throws {
+        try fm.trashItem(at: url, resultingItemURL: nil)
+    }
+
     func delete(_ url: URL) async throws {
         try fm.removeItem(at: url)
     }

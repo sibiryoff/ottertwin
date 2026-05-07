@@ -49,4 +49,25 @@ final class ToolbarUITests: OtterTwinUITestCase {
         app.windows.firstMatch.typeKey("r", modifierFlags: .command)
         XCTAssertTrue(app.tables["fileTable.left"].waitForExistence(timeout: 5))
     }
+
+    // MARK: - Delete confirmation
+
+    func testDeleteShowsConfirmationDialog() {
+        let table = app.tables["fileTable.left"]
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+        waitForRows(in: table)
+
+        table.tableRows.element(boundBy: 0).click()
+        XCTAssertTrue(app.buttons["toolbar.delete"].isEnabled)
+
+        app.buttons["toolbar.delete"].click()
+
+        // A sheet (NSAlert) should appear asking the user to confirm.
+        let sheet = app.sheets.firstMatch
+        XCTAssertTrue(sheet.waitForExistence(timeout: 5), "Confirmation sheet should appear")
+
+        // Cancel — file must remain untouched.
+        sheet.buttons["Cancel"].click()
+        XCTAssertFalse(app.sheets.firstMatch.exists, "Sheet should dismiss after Cancel")
+    }
 }
