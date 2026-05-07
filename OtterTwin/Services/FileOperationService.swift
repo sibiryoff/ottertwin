@@ -289,6 +289,29 @@ actor FileOperationService {
         return candidate
     }
 
+    // MARK: - Delete
+
+    func deleteItems(
+        urls: [URL],
+        mode: DeleteMode,
+        provider: any VFSProvider
+    ) async -> DeleteResult {
+        var succeeded: [URL] = []
+        var failed: [(url: URL, error: Error)] = []
+        for url in urls {
+            do {
+                switch mode {
+                case .trash:     try await provider.trash(url)
+                case .permanent: try await provider.delete(url)
+                }
+                succeeded.append(url)
+            } catch {
+                failed.append((url: url, error: error))
+            }
+        }
+        return DeleteResult(mode: mode, succeededURLs: succeeded, failedURLs: failed)
+    }
+
     // MARK: - Private helpers
 
     private func isSameVolume(_ a: URL, _ b: URL) -> Bool {
