@@ -126,7 +126,7 @@ final class FileTableUITests: OtterTwinUITestCase {
         }
 
         // Restore focus to the table, then press Space again — panel should close
-        table.click()
+        table.tableRows.element(boundBy: 0).click()
         table.typeKey(" ", modifierFlags: [])
         let panelClosed = NSPredicate(format: "count == %d", windowCountBefore)
         let closeExpect = XCTNSPredicateExpectation(predicate: panelClosed, object: app.windows)

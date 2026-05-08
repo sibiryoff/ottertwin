@@ -89,6 +89,7 @@ struct FileTableView: NSViewRepresentable {
 
         if context.coordinator.items != items {
             context.coordinator.items = items
+            context.coordinator.tableView?.previewItems = []
             tableView.reloadData()
             if isActive {
                 // Defer past SwiftUI's update cycle — calling makeFirstResponder
