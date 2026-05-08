@@ -130,7 +130,7 @@ struct FileTableView: NSViewRepresentable {
         var onEnterKey: () -> Void
         var onBackspace: () -> Void
         var onSortChange: (String, Bool) -> Void
-        weak var tableView: NSTableView?
+        weak var tableView: FileListView?
 
         private static let dateFormatter: DateFormatter = {
             let f = DateFormatter()
@@ -197,7 +197,7 @@ struct FileTableView: NSViewRepresentable {
             onActivate()
             let selected = tv.selectedRowIndexes.compactMap { items[safe: $0]?.id }
             selection = Set(selected)
-            (tableView as? FileListView)?.previewItems = selected
+            tableView?.previewItems = selected
             if QLPreviewPanel.sharedPreviewPanelExists(), QLPreviewPanel.shared().isVisible {
                 QLPreviewPanel.shared().reloadData()
             }
@@ -241,7 +241,7 @@ private final class FileListView: NSTableView, QLPreviewPanelDataSource, QLPrevi
     }
 
     // QLPreviewPanelController — called on the responder chain by QLPreviewPanel
-    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { true }
+    override func acceptsPreviewPanelControl(_ panel: QLPreviewPanel!) -> Bool { !previewItems.isEmpty }
     override func beginPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = self }
     override func endPreviewPanelControl(_ panel: QLPreviewPanel!) { panel.dataSource = nil }
 
