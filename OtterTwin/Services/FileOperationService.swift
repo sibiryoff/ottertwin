@@ -19,7 +19,7 @@ actor FileOperationService {
         conflictResolution: ConflictResolution = .skip
     ) -> AsyncThrowingStream<OperationState, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     guard let dest = try await self.resolvedDestination(
                         source: source, destination: destination,
@@ -39,6 +39,7 @@ actor FileOperationService {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -50,7 +51,7 @@ actor FileOperationService {
         conflictResolution: ConflictResolution = .skip
     ) -> AsyncThrowingStream<OperationState, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     let sameVolume = self.isSameVolume(source, destination)
                     guard let dest = try await self.resolvedDestination(
@@ -81,6 +82,7 @@ actor FileOperationService {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -91,7 +93,7 @@ actor FileOperationService {
         conflictResolution: ConflictResolution = .skip
     ) -> AsyncThrowingStream<OperationState, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            let task = Task {
                 do {
                     try await self.recursiveCopy(
                         source: source, destination: destination,
@@ -103,6 +105,7 @@ actor FileOperationService {
                     continuation.finish(throwing: error)
                 }
             }
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 
@@ -190,12 +193,16 @@ actor FileOperationService {
             let totalSize = source.fileByteCount
             var hasher = SHA256()
             var bytesRead: Int64 = 0
-            for try await chunk in provider.readChunks(of: source, chunkSize: chunkSize) {
-                try Task.checkCancellation()
-                hasher.update(data: chunk)
-                bytesRead += Int64(chunk.count)
-                let p = totalSize > 0 ? Double(bytesRead) / Double(totalSize) : 0
-                continuation.yield(.copying(progress: min(p, 1.0)))
+            do {
+                for try await chunk in provider.readChunks(of: source, chunkSize: chunkSize) {
+                    try Task.checkCancellation()
+                    hasher.update(data: chunk)
+                    bytesRead += Int64(chunk.count)
+                    let p = totalSize > 0 ? Double(bytesRead) / Double(totalSize) : 0
+                    continuation.yield(.copying(progress: min(p, 1.0)))
+                }
+            } catch is CancellationError {
+                throw OperationError.cancelled
             }
             sourceHex = hasher.finalize().hexString
         }
@@ -210,12 +217,16 @@ actor FileOperationService {
         let destSize = destination.fileByteCount
         var destHasher = SHA256()
         var bytesRead: Int64 = 0
-        for try await chunk in provider.readChunks(of: destination, chunkSize: chunkSize) {
-            try Task.checkCancellation()
-            destHasher.update(data: chunk)
-            bytesRead += Int64(chunk.count)
-            let p = destSize > 0 ? Double(bytesRead) / Double(destSize) : 0
-            continuation.yield(.verifying(progress: min(p, 1.0)))
+        do {
+            for try await chunk in provider.readChunks(of: destination, chunkSize: chunkSize) {
+                try Task.checkCancellation()
+                destHasher.update(data: chunk)
+                bytesRead += Int64(chunk.count)
+                let p = destSize > 0 ? Double(bytesRead) / Double(destSize) : 0
+                continuation.yield(.verifying(progress: min(p, 1.0)))
+            }
+        } catch is CancellationError {
+            throw OperationError.cancelled
         }
         let destHex = destHasher.finalize().hexString
         if srcHex != destHex {
