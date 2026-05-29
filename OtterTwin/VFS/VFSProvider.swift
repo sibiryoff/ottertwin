@@ -26,6 +26,9 @@ final class ChunkedWriter {
         finalURL = url
         tempURL = url.deletingLastPathComponent()
             .appendingPathComponent("." + url.lastPathComponent + ".part")
+        // Remove any stale temp file from a previous crash so we always start clean;
+        // createFile does not truncate an existing file.
+        try? FileManager.default.removeItem(at: tempURL)
         FileManager.default.createFile(atPath: tempURL.path, contents: nil)
         handle = try FileHandle(forWritingTo: tempURL)
     }

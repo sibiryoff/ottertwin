@@ -166,9 +166,10 @@ final class FileOperationServiceTests: XCTestCase {
         // We then cancel the outer task which stops the verify loop.
         try Data(repeating: 0xAB, count: 256).write(to: src)
 
-        // Tiny chunk size so copy finishes in one chunk, checksum loop starts.
+        // Large chunk size so the whole 256-byte file fits in one read, making copy
+        // finish in a single iteration so cancellation reaches the verify phase.
         let settings = makeSettings(checksumEnabled: true)
-        settings.chunkSizeBytes = 1024 * 1024  // 1 MB — whole file fits in one read
+        settings.chunkSizeBytes = 1024 * 1024
         let service = FileOperationService(settings: settings)
         let provider = LocalProvider()
 
