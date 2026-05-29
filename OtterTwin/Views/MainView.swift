@@ -140,6 +140,7 @@ struct MainView: View {
 
     @MainActor
     private func runOperations(kind: OperationKind) async {
+        defer { activeTask = nil }
         let provider = LocalProvider()
         // Create service with the live environment settings so chunk size / checksum
         // preferences take effect immediately without requiring an app restart.
@@ -161,8 +162,17 @@ struct MainView: View {
                     op.state = state
                     currentOperation = op
                 }
+                // Stream ended normally but the outer task may already be cancelled
+                // (e.g. the cancel button was pressed just as the last chunk arrived).
+                if Task.isCancelled {
+                    op.state = .cancelled
+                    currentOperation = op
+                    break
+                }
             } catch {
                 if error is CancellationError {
+                    op.state = .cancelled
+                } else if let opError = error as? OperationError, case .cancelled = opError {
                     op.state = .cancelled
                 } else {
                     let opError: OperationError = (error as? OperationError) ?? .ioError(error)

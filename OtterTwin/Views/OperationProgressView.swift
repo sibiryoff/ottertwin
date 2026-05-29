@@ -57,10 +57,7 @@ struct OperationProgressView: View {
                     Button("Done") { onDismiss() }
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("progress.done")
-                } else if case .failed = state {
-                    Button("Close") { onDismiss() }
-                        .accessibilityIdentifier("progress.close")
-                } else if case .cancelled = state {
+                } else if isTerminalFailure {
                     Button("Close") { onDismiss() }
                         .accessibilityIdentifier("progress.close")
                 } else {
@@ -71,6 +68,12 @@ struct OperationProgressView: View {
         }
         .padding(20)
         .frame(width: 440, height: 260)
+    }
+
+    private var isTerminalFailure: Bool {
+        if case .failed = state { return true }
+        if case .cancelled = state { return true }
+        return false
     }
 
     // MARK: - Sub-views
