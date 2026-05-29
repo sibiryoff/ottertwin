@@ -3,7 +3,8 @@ import SwiftUI
 struct OperationProgressView: View {
     let operation: FileOperation
     let state: OperationState
-    let onCancel: () -> Void
+    let onRequestCancel: () -> Void
+    let onDismiss: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -53,20 +54,26 @@ struct OperationProgressView: View {
             HStack {
                 Spacer()
                 if case .complete = state {
-                    Button("Done") { onCancel() }
+                    Button("Done") { onDismiss() }
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("progress.done")
-                } else if case .failed = state {
-                    Button("Close") { onCancel() }
+                } else if isTerminalFailure {
+                    Button("Close") { onDismiss() }
                         .accessibilityIdentifier("progress.close")
                 } else {
-                    Button("Cancel", role: .cancel) { onCancel() }
+                    Button("Cancel", role: .cancel) { onRequestCancel() }
                         .accessibilityIdentifier("progress.cancel")
                 }
             }
         }
         .padding(20)
         .frame(width: 440, height: 260)
+    }
+
+    private var isTerminalFailure: Bool {
+        if case .failed = state { return true }
+        if case .cancelled = state { return true }
+        return false
     }
 
     // MARK: - Sub-views
