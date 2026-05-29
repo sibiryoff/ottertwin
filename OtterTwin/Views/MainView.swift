@@ -38,7 +38,8 @@ struct MainView: View {
                     path: $appState.leftPath,
                     selection: $appState.leftSelection,
                     isActive: appState.activePanel == .left,
-                    onActivate: { appState.activePanel = .left }
+                    onActivate: { appState.activePanel = .left },
+                    onProviderChange: { appState.leftProvider = $0 }
                 )
 
                 FilePanelView(
@@ -46,7 +47,8 @@ struct MainView: View {
                     path: $appState.rightPath,
                     selection: $appState.rightSelection,
                     isActive: appState.activePanel == .right,
-                    onActivate: { appState.activePanel = .right }
+                    onActivate: { appState.activePanel = .right },
+                    onProviderChange: { appState.rightProvider = $0 }
                 )
             }
         }

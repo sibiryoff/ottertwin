@@ -6,6 +6,7 @@ struct FilePanelView: View {
     @Binding var selection: Set<URL>
     let isActive: Bool
     var onActivate: () -> Void = {}
+    var onProviderChange: (any VFSProvider) -> Void = { _ in }
 
     @State private var items: [FileItem] = []
     @State private var isLoading = false
@@ -66,11 +67,14 @@ struct FilePanelView: View {
         .accessibilityIdentifier("panel.\(panelID)")
         .task(id: path) { await loadDirectory() }
         .sheet(isPresented: $showSMBConnect) {
-            SMBConnectView(onConnect: { provider in
-                // After mounting, navigate to the share's local mount point
-                if let mountURL = try? provider.rootURL {
+            SMBConnectView(onConnect: { smbProvider in
+                // After mounting, navigate to the share's local mount point and
+                // propagate the provider so the toolbar delete flow knows the panel
+                // is backed by a remote share (supportsTrash == false).
+                if let mountURL = try? smbProvider.rootURL {
                     path = mountURL
                 }
+                onProviderChange(smbProvider)
                 showSMBConnect = false
             })
         }
