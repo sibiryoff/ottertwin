@@ -10,8 +10,14 @@ import AppKit
 final class SnapshotTests: XCTestCase {
     override func setUp() {
         super.setUp()
+        clearSettingsDefaults()
         // Set to true to regenerate reference snapshots:
         // isRecording = true
+    }
+
+    override func tearDown() {
+        clearSettingsDefaults()
+        super.tearDown()
     }
 
     // MARK: - OperationProgressView states
@@ -99,7 +105,7 @@ final class SnapshotTests: XCTestCase {
 
     func testSettingsViewChecksumDisabled() {
         let settings = SettingsService()
-        settings.checksumEnabled = false
+        settings.setChecksumEnabled(false, userConfirmedDisable: true)
         let view = SettingsView().environment(settings)
         assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 420, height: 320)))
     }
@@ -112,5 +118,12 @@ final class SnapshotTests: XCTestCase {
             destination: URL(fileURLWithPath: "/tmp/dest/document.pdf"),
             kind: kind
         )
+    }
+
+    private func clearSettingsDefaults() {
+        UserDefaults.standard.removeObject(forKey: "checksumEnabled")
+        UserDefaults.standard.removeObject(forKey: "checksumAlgorithm")
+        UserDefaults.standard.removeObject(forKey: "chunkSizeBytes")
+        UserDefaults.standard.removeObject(forKey: "checksumDisableAcknowledged")
     }
 }

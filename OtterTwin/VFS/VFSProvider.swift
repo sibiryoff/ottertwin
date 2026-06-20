@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 protocol VFSProvider {
     func listDirectory(_ url: URL) async throws -> [FileItem]
@@ -17,10 +18,13 @@ protocol VFSProvider {
 final class ChunkedWriter {
     private let handle: FileHandle
     private let url: URL
+    private let scopedAccess: ScopedAccess?
 
     init(url: URL) throws {
-        FileManager.default.createFile(atPath: url.path, contents: nil)
-        handle = try FileHandle(forWritingTo: url)
+        scopedAccess = try? ScopedAccess(url: url.deletingLastPathComponent())
+        let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, S_IRUSR | S_IWUSR)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
         self.url = url
     }
 
@@ -34,6 +38,9 @@ final class ChunkedWriter {
 
     func abort() {
         try? handle.close()
-        try? FileManager.default.removeItem(at: url)
+    }
+
+    deinit {
+        scopedAccess?.stop()
     }
 }

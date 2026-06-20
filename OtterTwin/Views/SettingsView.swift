@@ -4,6 +4,7 @@ struct SettingsView: View {
     @Environment(SettingsService.self) private var settings
     @State private var chunkSizeText: String = ""
     @State private var chunkUnit: ChunkUnit = .mb
+    @State private var confirmingChecksumDisable = false
 
     enum ChunkUnit: String, CaseIterable, Identifiable {
         case kb = "KB"
@@ -17,8 +18,15 @@ struct SettingsView: View {
 
         Form {
             Section("Integrity") {
-                Toggle("Verify checksums after copy/move", isOn: $settings.checksumEnabled)
+                Toggle("Verify checksums after copy/move", isOn: checksumEnabledBinding)
                     .accessibilityIdentifier("settings.checksumEnabled")
+
+                if !settings.checksumEnabled {
+                    Label("Checksum verification is disabled. Copies and moves can complete without integrity validation.", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                        .accessibilityIdentifier("settings.checksumWarning")
+                }
 
                 Picker("Algorithm", selection: $settings.checksumAlgorithm) {
                     ForEach(ChecksumAlgorithm.allCases) { alg in
@@ -36,9 +44,7 @@ struct SettingsView: View {
                         .multilineTextAlignment(.trailing)
                         .accessibilityIdentifier("settings.chunkSize")
                         .onChange(of: chunkSizeText) { _, newValue in
-                            if let v = Int(newValue), v > 0 {
-                                settings.chunkSizeBytes = v * chunkUnit.bytes
-                            }
+                            updateChunkSize(valueText: newValue, unit: chunkUnit)
                         }
                     Picker("", selection: $chunkUnit) {
                         ForEach(ChunkUnit.allCases) { u in
@@ -48,9 +54,7 @@ struct SettingsView: View {
                     .frame(width: 60)
                     .accessibilityIdentifier("settings.chunkUnit")
                     .onChange(of: chunkUnit) { _, newUnit in
-                        if let v = Int(chunkSizeText), v > 0 {
-                            settings.chunkSizeBytes = v * newUnit.bytes
-                        }
+                        updateChunkSize(valueText: chunkSizeText, unit: newUnit)
                     }
                 }
             }
@@ -59,6 +63,41 @@ struct SettingsView: View {
         .frame(width: 400)
         .padding()
         .onAppear { syncChunkFields() }
+        .confirmationDialog(
+            "Disable checksum verification?",
+            isPresented: $confirmingChecksumDisable,
+            titleVisibility: .visible
+        ) {
+            Button("Disable Verification", role: .destructive) {
+                settings.setChecksumEnabled(false, userConfirmedDisable: true)
+            }
+            Button("Keep Verification On", role: .cancel) {
+                settings.setChecksumEnabled(true)
+            }
+        } message: {
+            Text("OtterTwin will not verify SHA-256 checksums after copy or move operations.")
+        }
+    }
+
+    private var checksumEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { settings.checksumEnabled },
+            set: { enabled in
+                if enabled {
+                    settings.setChecksumEnabled(true)
+                } else {
+                    confirmingChecksumDisable = true
+                }
+            }
+        )
+    }
+
+    private func updateChunkSize(valueText: String, unit: ChunkUnit) {
+        guard let value = Int(valueText), value > 0 else { return }
+        let multiplied = value.multipliedReportingOverflow(by: unit.bytes)
+        let bytes = multiplied.overflow ? SettingsService.maximumChunkSizeBytes : multiplied.partialValue
+        settings.setChunkSizeBytes(bytes)
+        syncChunkFields()
     }
 
     private func syncChunkFields() {

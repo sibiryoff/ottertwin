@@ -6,8 +6,8 @@ final class FileOperationServiceTests: XCTestCase {
 
     private func makeSettings(checksumEnabled: Bool = true) -> SettingsService {
         let s = SettingsService()
-        s.checksumEnabled = checksumEnabled
-        s.chunkSizeBytes = 4096
+        s.setChecksumEnabled(checksumEnabled, userConfirmedDisable: !checksumEnabled)
+        s.setChunkSizeBytes(4096)
         return s
     }
 
@@ -151,5 +151,39 @@ final class FileOperationServiceTests: XCTestCase {
 
         XCTAssertTrue(fm.fileExists(atPath: dst.appendingPathComponent("a.txt").path))
         XCTAssertTrue(fm.fileExists(atPath: dst.appendingPathComponent("subDir/b.txt").path))
+    }
+
+    // MARK: - Conflict race safety
+
+    func testCopyDoesNotOverwriteExistingFileWhenDestinationAppearsAfterConflictCheck() async throws {
+        let dir = try tmpDir()
+        defer { try? fm.removeItem(at: dir) }
+
+        let src = dir.appendingPathComponent("source.bin")
+        let dst = dir.appendingPathComponent("dest.bin")
+        try Data(repeating: 0xAA, count: 512).write(to: src)
+        try Data(repeating: 0xBB, count: 512).write(to: dst)
+
+        let provider = LocalProvider()
+
+        XCTAssertThrowsError(try provider.makeWriter(at: dst)) { error in
+            let posix = error as? POSIXError
+            XCTAssertEqual(posix?.code, .EEXIST)
+        }
+
+        XCTAssertEqual(try Data(contentsOf: dst), Data(repeating: 0xBB, count: 512))
+    }
+
+    func testWriterCreatesOwnerOnlyFile() throws {
+        let dir = try tmpDir()
+        defer { try? fm.removeItem(at: dir) }
+
+        let dst = dir.appendingPathComponent("secure.bin")
+        let writer = try LocalProvider().makeWriter(at: dst)
+        try writer.write(Data([0x01]))
+        try writer.close()
+
+        let permissions = try fm.attributesOfItem(atPath: dst.path)[.posixPermissions] as? NSNumber
+        XCTAssertEqual(permissions?.intValue, 0o600)
     }
 }

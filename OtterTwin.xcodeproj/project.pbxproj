@@ -22,6 +22,7 @@
 		5BFFE3DF4AA4B3290253BB49 /* FileItem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35488D787578F510155111C1 /* FileItem.swift */; };
 		6408C0ADD10BDFC836A692FF /* OtterTwinUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9619B178A00AA5D72BB20FEC /* OtterTwinUITestCase.swift */; };
 		6CDFCECD9024B54F7398FD98 /* ChecksumServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 249DA131B3BA20F1A0646312 /* ChecksumServiceTests.swift */; };
+		6D00C1951D8B291C530B6667 /* ConnectionInfoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8357A888177612AE0C5D96F /* ConnectionInfoTests.swift */; };
 		6D10BDD7581036C80627A0CB /* testProgressViewFailed.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 251B4C495CB2359F87095A9A /* testProgressViewFailed.1.png */; };
 		6E19FF66AC14C9711C1751EF /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72A2528D5DA3E0668F5052E8 /* MainView.swift */; };
 		7133BA322F1082DE25145AE6 /* FileSortingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8061E056F3B2B21FC59C7D3 /* FileSortingTests.swift */; };
@@ -40,6 +41,7 @@
 		AB7690B9BA74E9D1F2B4C83D /* OtterTwinApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E11A23A4824A418047396C46 /* OtterTwinApp.swift */; };
 		ADB9BFCB0CC3457B792D845D /* testProgressViewComplete.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 61CFEFB2792A2D5B3875FA9A /* testProgressViewComplete.1.png */; };
 		AE937A04028310A67E810E23 /* FileTableUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8694ECAA0CE6147FD91F230D /* FileTableUITests.swift */; };
+		B782BCB3A484CEF3ADA7DC90 /* SettingsServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 989ED58B52A99CDA02CF6DF0 /* SettingsServiceTests.swift */; };
 		B8C837F83F4CA7F7F0A49C48 /* testProgressViewPending.1.png in Resources */ = {isa = PBXBuildFile; fileRef = 1CF5E532FA7F06A4E112BF4E /* testProgressViewPending.1.png */; };
 		BEDABEEB5ADE623FC6FA0A55 /* FileOperationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81D227B86718B9FC4B6DCFBE /* FileOperationService.swift */; };
 		C239EB549D8046A403BF24E0 /* ChecksumService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A56B28E864E097A0B95E07AA /* ChecksumService.swift */; };
@@ -104,10 +106,12 @@
 		932156837B64DF92DF1C5058 /* SMBProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMBProvider.swift; sourceTree = "<group>"; };
 		95C529FFE6FAA64E9FF5420D /* testSettingsViewDefaults.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testSettingsViewDefaults.1.png; sourceTree = "<group>"; };
 		9619B178A00AA5D72BB20FEC /* OtterTwinUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OtterTwinUITestCase.swift; sourceTree = "<group>"; };
+		989ED58B52A99CDA02CF6DF0 /* SettingsServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsServiceTests.swift; sourceTree = "<group>"; };
 		9BC4388CCF1C6F3938345DB4 /* NetFS.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; path = NetFS.framework; sourceTree = "<group>"; };
 		A2384162BAEF697035001D92 /* FilePanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilePanelView.swift; sourceTree = "<group>"; };
 		A56B28E864E097A0B95E07AA /* ChecksumService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChecksumService.swift; sourceTree = "<group>"; };
 		AFD68162CD4314AE29CC6F29 /* FileItemTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileItemTests.swift; sourceTree = "<group>"; };
+		B8357A888177612AE0C5D96F /* ConnectionInfoTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionInfoTests.swift; sourceTree = "<group>"; };
 		C565DF821D8C725234A0FE64 /* FileTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileTableView.swift; sourceTree = "<group>"; };
 		CC1066A1211C00EF8DE355C4 /* testProgressViewVerifying.1.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = testProgressViewVerifying.1.png; sourceTree = "<group>"; };
 		D191D9CF5AECAA32C258E119 /* VFSProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VFSProvider.swift; sourceTree = "<group>"; };
@@ -234,10 +238,12 @@
 			isa = PBXGroup;
 			children = (
 				249DA131B3BA20F1A0646312 /* ChecksumServiceTests.swift */,
+				B8357A888177612AE0C5D96F /* ConnectionInfoTests.swift */,
 				AFD68162CD4314AE29CC6F29 /* FileItemTests.swift */,
 				EAC9B3F192B42D565D52E0D2 /* FileOperationServiceTests.swift */,
 				F8061E056F3B2B21FC59C7D3 /* FileSortingTests.swift */,
 				2A867997FAE4C66F43D14EAA /* LocalProviderTests.swift */,
+				989ED58B52A99CDA02CF6DF0 /* SettingsServiceTests.swift */,
 				0C258159133504A712DDC6B8 /* SnapshotTests.swift */,
 				16FF5CCB923192CB0B185FC2 /* __Snapshots__ */,
 			);
@@ -475,10 +481,12 @@
 			buildActionMask = 2147483647;
 			files = (
 				6CDFCECD9024B54F7398FD98 /* ChecksumServiceTests.swift in Sources */,
+				6D00C1951D8B291C530B6667 /* ConnectionInfoTests.swift in Sources */,
 				1F40CF8FC7C51DCD77F3C4E6 /* FileItemTests.swift in Sources */,
 				87FE373643697A9BEE7F04DE /* FileOperationServiceTests.swift in Sources */,
 				7133BA322F1082DE25145AE6 /* FileSortingTests.swift in Sources */,
 				0AA16FCDBD2F27B146DBBE47 /* LocalProviderTests.swift in Sources */,
+				B782BCB3A484CEF3ADA7DC90 /* SettingsServiceTests.swift in Sources */,
 				0F6DA42A62DD58912A26D07F /* SnapshotTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -504,6 +512,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -544,6 +553,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -560,6 +570,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -697,6 +708,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

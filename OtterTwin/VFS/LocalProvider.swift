@@ -6,6 +6,8 @@ final class LocalProvider: VFSProvider {
     // MARK: - List
 
     func listDirectory(_ url: URL) async throws -> [FileItem] {
+        let access = try ScopedAccess(url: url)
+        defer { access.stop() }
         let contents = try fm.contentsOfDirectory(
             at: url,
             includingPropertiesForKeys: [
@@ -20,7 +22,9 @@ final class LocalProvider: VFSProvider {
     // MARK: - Attributes
 
     func attributes(of url: URL) async throws -> FileItem {
-        try makeFileItem(url: url)
+        let access = try ScopedAccess(url: url)
+        defer { access.stop() }
+        return try makeFileItem(url: url)
     }
 
     // MARK: - Read chunks
@@ -29,6 +33,8 @@ final class LocalProvider: VFSProvider {
         AsyncThrowingStream { continuation in
             Task.detached {
                 do {
+                    let access = try ScopedAccess(url: url)
+                    defer { access.stop() }
                     let handle = try FileHandle(forReadingFrom: url)
                     defer { try? handle.close() }
                     while true {
@@ -54,18 +60,28 @@ final class LocalProvider: VFSProvider {
     // MARK: - Directory
 
     func createDirectory(at url: URL) async throws {
+        let access = try ScopedAccess(url: url.deletingLastPathComponent())
+        defer { access.stop() }
         try fm.createDirectory(at: url, withIntermediateDirectories: true)
     }
 
     // MARK: - Delete
 
     func delete(_ url: URL) async throws {
+        let access = try ScopedAccess(url: url)
+        defer { access.stop() }
         try fm.removeItem(at: url)
     }
 
     // MARK: - Move (same-volume rename)
 
     func move(from: URL, to: URL) async throws {
+        let sourceAccess = try ScopedAccess(url: from)
+        let destinationAccess = try ScopedAccess(url: to.deletingLastPathComponent())
+        defer {
+            sourceAccess.stop()
+            destinationAccess.stop()
+        }
         try fm.moveItem(at: from, to: to)
     }
 
