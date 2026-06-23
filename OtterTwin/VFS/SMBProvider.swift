@@ -60,6 +60,12 @@ final class SMBProvider: VFSProvider {
         try await provider().createDirectory(at: url)
     }
 
+    var supportsTrash: Bool { false }
+
+    func trash(_ url: URL) async throws {
+        throw TrashNotSupportedError()
+    }
+
     func delete(_ url: URL) async throws {
         try await provider().delete(url)
     }
@@ -87,4 +93,8 @@ final class SMBProvider: VFSProvider {
 
 struct NotConnectedError: Error, LocalizedError {
     var errorDescription: String? { "Not connected to SMB share" }
+}
+
+struct TrashNotSupportedError: Error, LocalizedError {
+    var errorDescription: String? { "Moving to Trash is not supported for remote shares" }
 }
