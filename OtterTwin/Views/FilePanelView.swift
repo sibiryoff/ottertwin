@@ -6,6 +6,7 @@ struct FilePanelView: View {
     @Binding var selection: Set<URL>
     let isActive: Bool
     var onActivate: () -> Void = {}
+    var onTabKey: () -> Void = {}
 
     @State private var items: [FileItem] = []
     @State private var isLoading = false
@@ -43,6 +44,7 @@ struct FilePanelView: View {
                     onActivate: onActivate,
                     onEnterKey: navigateSelected,
                     onBackspace: navigateUp,
+                    onTabKey: onTabKey,
                     onSortChange: { key, asc in sortKey = key; sortAscending = asc }
                 )
                 if isLoading {

@@ -104,6 +104,30 @@ final class FileTableUITests: OtterTwinUITestCase {
         XCTAssertTrue(app.tables["fileTable.right"].exists)
     }
 
+    func testTabMovesToFileTableNotButtonRow() {
+        let leftTable = app.tables["fileTable.left"]
+        XCTAssertTrue(leftTable.waitForExistence(timeout: 5))
+        waitForRows(in: leftTable)
+
+        // Focus left table and select first row
+        leftTable.tableRows.element(boundBy: 0).click()
+
+        // Press Tab — should switch to right panel
+        leftTable.typeKey("\t", modifierFlags: [])
+
+        let rightTable = app.tables["fileTable.right"]
+        XCTAssertTrue(rightTable.waitForExistence(timeout: 5))
+        waitForRows(in: rightTable)
+
+        // Arrow down: if right table has focus this selects row 1
+        // If focus landed on a button instead, this would do nothing to the table
+        rightTable.typeKey(.downArrow, modifierFlags: [])
+        XCTAssertTrue(
+            rightTable.tableRows.element(boundBy: 1).isSelected,
+            "Tab should move keyboard focus to the file list, not the button row"
+        )
+    }
+
     // MARK: - Column Sorting
 
     func testClickingColumnHeaderSorts() {

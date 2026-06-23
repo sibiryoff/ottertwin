@@ -35,7 +35,8 @@ struct MainView: View {
                     path: $appState.leftPath,
                     selection: $appState.leftSelection,
                     isActive: appState.activePanel == .left,
-                    onActivate: { appState.activePanel = .left }
+                    onActivate: { appState.activePanel = .left },
+                    onTabKey: { appState.togglePanel() }
                 )
 
                 FilePanelView(
@@ -43,7 +44,8 @@ struct MainView: View {
                     path: $appState.rightPath,
                     selection: $appState.rightSelection,
                     isActive: appState.activePanel == .right,
-                    onActivate: { appState.activePanel = .right }
+                    onActivate: { appState.activePanel = .right },
+                    onTabKey: { appState.togglePanel() }
                 )
             }
         }
@@ -56,11 +58,6 @@ struct MainView: View {
                 )
             }
         }
-        .onKeyPress(.tab) {
-            appState.togglePanel()
-            return .handled
-        }
-        .focusable()
     }
 
     // MARK: - Operations
