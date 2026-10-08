@@ -12,7 +12,8 @@ struct ToolbarView: View {
         HStack(spacing: 8) {
             Button("F5  Copy") { onCopy() }
                 .disabled(!hasSelection)
-                .keyboardShortcut("c", modifiers: [])  // F5 handled via onKeyPress below
+                // No keyboard shortcut here on purpose: an unmodified key (e.g. "c")
+                // would start a copy on a stray keypress (#25). F5/F6/F8 are #17.
                 .accessibilityIdentifier("toolbar.copy")
 
             Button("F6  Move") { onMove() }
