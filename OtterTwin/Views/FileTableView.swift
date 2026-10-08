@@ -12,13 +12,15 @@ struct FileTableView: NSViewRepresentable {
     var onActivate: () -> Void = {}
     var onEnterKey: () -> Void = {}
     var onBackspace: () -> Void = {}
+    var onTabKey: () -> Void = {}
     var onSortChange: (String, Bool) -> Void = { _, _ in }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             selection: $selection, items: items,
             onDoubleClick: onDoubleClick, onActivate: onActivate,
-            onEnterKey: onEnterKey, onBackspace: onBackspace, onSortChange: onSortChange
+            onEnterKey: onEnterKey, onBackspace: onBackspace,
+            onTabKey: onTabKey, onSortChange: onSortChange
         )
     }
 
@@ -70,6 +72,7 @@ struct FileTableView: NSViewRepresentable {
         let coordinator = context.coordinator
         tableView.onEnterKey = { coordinator.onEnterKey() }
         tableView.onBackspace = { coordinator.onBackspace() }
+        tableView.onTabKey = { coordinator.onTabKey() }
 
         tableView.doubleAction = #selector(Coordinator.handleDoubleClick(_:))
         tableView.target = context.coordinator
@@ -83,6 +86,7 @@ struct FileTableView: NSViewRepresentable {
         context.coordinator.onActivate = onActivate
         context.coordinator.onEnterKey = onEnterKey
         context.coordinator.onBackspace = onBackspace
+        context.coordinator.onTabKey = onTabKey
         context.coordinator.onSortChange = onSortChange
         guard let tableView = scrollView.documentView as? NSTableView else { return }
 
@@ -128,6 +132,7 @@ struct FileTableView: NSViewRepresentable {
         var onActivate: () -> Void
         var onEnterKey: () -> Void
         var onBackspace: () -> Void
+        var onTabKey: () -> Void
         var onSortChange: (String, Bool) -> Void
         weak var tableView: NSTableView?
 
@@ -145,6 +150,7 @@ struct FileTableView: NSViewRepresentable {
             onActivate: @escaping () -> Void,
             onEnterKey: @escaping () -> Void,
             onBackspace: @escaping () -> Void,
+            onTabKey: @escaping () -> Void,
             onSortChange: @escaping (String, Bool) -> Void
         ) {
             _selection = selection
@@ -153,6 +159,7 @@ struct FileTableView: NSViewRepresentable {
             self.onActivate = onActivate
             self.onEnterKey = onEnterKey
             self.onBackspace = onBackspace
+            self.onTabKey = onTabKey
             self.onSortChange = onSortChange
         }
 
@@ -215,10 +222,12 @@ struct FileTableView: NSViewRepresentable {
 private final class FileListView: NSTableView {
     var onEnterKey: (() -> Void)?
     var onBackspace: (() -> Void)?
+    var onTabKey: (() -> Void)?
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 36, 76: onEnterKey?()   // Return, numpad Enter
+        case 48:     onTabKey?()     // Tab — intercept before AppKit tab-order navigation
         case 51:     onBackspace?()  // Delete/Backspace
         default:     super.keyDown(with: event)
         }
