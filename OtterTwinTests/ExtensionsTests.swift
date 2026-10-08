@@ -17,7 +17,7 @@ final class ExtensionsTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
-        if let tempDir {
+        if let tempDir, FileManager.default.fileExists(atPath: tempDir.path) {
             try FileManager.default.removeItem(at: tempDir)
         }
         tempDir = nil
@@ -53,6 +53,14 @@ final class ExtensionsTests: XCTestCase {
     func testFileByteCountOfEmptyFileIsZero() throws {
         let url = tempDir.appendingPathComponent("empty.bin")
         try Data().write(to: url)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(url.fileByteCount, 0)
+    }
+
+    func testFileByteCountOfMissingFileFallsBackToZero() {
+        // Documents current behaviour: a missing file reports 0 bytes rather than throwing.
+        let url = tempDir.appendingPathComponent("does-not-exist.bin")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
         XCTAssertEqual(url.fileByteCount, 0)
     }
 }

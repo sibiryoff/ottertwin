@@ -48,7 +48,7 @@ xcodebuild test -project OtterTwin.xcodeproj -scheme OtterTwinTests \
   -only-testing:OtterTwinTests/ChecksumServiceTests
 ```
 
-CI: `.github/workflows/macos-ci.yml` (job `build-and-test` = the merge gate: unit + snapshot tests with snapshot recording disabled; `ui-tests` = XCUITest, non-blocking, not counted as coverage; `record-snapshots` = manual `workflow_dispatch` that uploads baselines recorded on the runner). Shared setup lives in `.github/actions/setup-project`.
+CI: `.github/workflows/macos-ci.yml` (job `build-and-test` = the merge gate: unit + snapshot tests with snapshot recording disabled; `ui-tests` = XCUITest, non-blocking, not counted as coverage; `record-snapshots` = records baselines on the runner: manual `workflow_dispatch` uploads an artifact; pushing a `ci/record-snapshots/<name>` branch commits them back to that branch for a dedicated review PR). Agents can read job logs with the GitHub MCP `get_job_logs` tool; artifact downloads (blob storage) are blocked from agent sessions. Shared setup lives in `.github/actions/setup-project`.
 
 Tests use `XCTestCase` (not Swift Testing). The test target uses `TEST_HOST`/`BUNDLE_LOADER` pointing at the app binary. `OtterTwinApp` checks for `XCTestConfigurationFilePath` in env and renders `EmptyView` to prevent SwiftUI lifecycle from blocking the test runner.
 

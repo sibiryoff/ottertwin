@@ -3,7 +3,12 @@ name: macOS CI
 on:
   pull_request:
   push:
-    branches: [main]
+    branches:
+      - main
+      # Pushing a branch with this prefix records snapshot baselines on the CI
+      # runner and commits them back to THAT branch only, for review in a
+      # dedicated PR. It never touches main.
+      - "ci/record-snapshots/**"
   workflow_dispatch:
     inputs:
       record_snapshots:
@@ -12,7 +17,8 @@ on:
         default: false
 
 concurrency:
-  group: macos-ci-${{ github.ref }}
+  group: macos-ci-${{ github.event_name }}-${{ github.ref }}
+  # Superseded PR runs are cancelled; runs on main always complete.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -36,7 +42,7 @@ env:
 jobs:
   build-and-test:
     name: build-and-test
-    if: github.event_name != 'workflow_dispatch' || !inputs.record_snapshots
+    if: ${{ !startsWith(github.ref, 'refs/heads/ci/record-snapshots/') && !(github.event_name == 'workflow_dispatch' && inputs.record_snapshots) }}
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -64,9 +70,17 @@ jobs:
       - name: Test summary
         if: always()
         run: |
-          if [ -d build/OtterTwinTests.xcresult ]; then
-            xcrun xcresulttool get test-results summary --path build/OtterTwinTests.xcresult --compact || true
+          RESULT=build/OtterTwinTests.xcresult
+          if [ ! -d "$RESULT" ]; then
+            echo "::error::No $RESULT produced (build failure?). First compiler errors:"
+            grep -h -E "(error|fatal error):" build/logs/*.log 2>/dev/null | head -20 || true
+            exit 0
           fi
+          xcrun xcresulttool get test-results summary --path "$RESULT" --compact > build/OtterTwinTests-summary.json || exit 0
+          jq '{result, passedTests, failedTests, skippedTests, failures: [.testFailures[]? | {test: .testIdentifierString, message: (.failureText | split("\n")[0])}]}' build/OtterTwinTests-summary.json
+          # One annotation per failing test, readable via the REST check-run annotations API.
+          jq -r '.testFailures[]? | "::error title=\(.testIdentifierString)::\(.failureText | split("\n")[0])"' build/OtterTwinTests-summary.json | head -50
+          jq -r '"### OtterTwinTests: \(.result) — \(.passedTests) passed, \(.failedTests) failed, \(.skippedTests) skipped"' build/OtterTwinTests-summary.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check snapshot baselines were not modified
         if: always()
@@ -79,18 +93,19 @@ jobs:
           fi
 
       - name: Upload test results and logs
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: OtterTwinTests-results
           path: |
             build/OtterTwinTests.xcresult
             build/logs
+            build/*-summary.json
           retention-days: 14
 
   ui-tests:
     name: ui-tests (XCUITest, non-blocking)
-    if: github.event_name != 'workflow_dispatch' || !inputs.record_snapshots
+    if: ${{ !startsWith(github.ref, 'refs/heads/ci/record-snapshots/') && !(github.event_name == 'workflow_dispatch' && inputs.record_snapshots) }}
     runs-on: macos-15
     timeout-minutes: 30
     # XCUITest on hosted runners is not yet a reliable signal; it is reported
@@ -109,18 +124,29 @@ jobs:
           set -euo pipefail
           mkdir -p build/logs
           # UI tests need a launchable, ad-hoc signed app and test runner.
+          # The App Sandbox entitlements are not applied here: an ad-hoc signed
+          # sandboxed app cannot be spawned on the runner (RunningBoard error 5).
+          # The entitlements file itself is unchanged.
           xcodebuild test $XCB_COMMON \
             -scheme OtterTwinUITests \
             -resultBundlePath build/OtterTwinUITests.xcresult \
-            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_ENTITLEMENTS= \
             2>&1 | tee build/logs/OtterTwinUITests.log
 
       - name: Test summary
         if: always()
         run: |
-          if [ -d build/OtterTwinUITests.xcresult ]; then
-            xcrun xcresulttool get test-results summary --path build/OtterTwinUITests.xcresult --compact || true
+          RESULT=build/OtterTwinUITests.xcresult
+          if [ ! -d "$RESULT" ]; then
+            echo "::error::No $RESULT produced (build failure?). First compiler errors:"
+            grep -h -E "(error|fatal error):" build/logs/*.log 2>/dev/null | head -20 || true
+            exit 0
           fi
+          xcrun xcresulttool get test-results summary --path "$RESULT" --compact > build/OtterTwinUITests-summary.json || exit 0
+          jq '{result, passedTests, failedTests, skippedTests, failures: [.testFailures[]? | {test: .testIdentifierString, message: (.failureText | split("\n")[0])}]}' build/OtterTwinUITests-summary.json
+          # One annotation per failing test, readable via the REST check-run annotations API.
+          jq -r '.testFailures[]? | "::error title=\(.testIdentifierString)::\(.failureText | split("\n")[0])"' build/OtterTwinUITests-summary.json | head -50
+          jq -r '"### OtterTwinUITests: \(.result) — \(.passedTests) passed, \(.failedTests) failed, \(.skippedTests) skipped"' build/OtterTwinUITests-summary.json >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload UI test results and logs
         if: always()
@@ -135,9 +161,11 @@ jobs:
 
   record-snapshots:
     name: record-snapshots (manual)
-    if: github.event_name == 'workflow_dispatch' && inputs.record_snapshots
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.record_snapshots) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/ci/record-snapshots/')) }}
     runs-on: macos-15
     timeout-minutes: 30
+    permissions:
+      contents: write   # only used to push to the ci/record-snapshots/* branch itself
     steps:
       - uses: actions/checkout@v4
 
@@ -158,6 +186,11 @@ jobs:
             -only-testing:OtterTwinTests/SnapshotTests \
             $XCB_NO_SIGNING \
             2>&1 | tee build/logs/record-snapshots.log || true
+          if ! grep -q "Record mode is on" build/logs/record-snapshots.log; then
+            echo "::error::Snapshot record mode did not reach the test process; nothing was recorded."
+            exit 1
+          fi
+          echo "Changed baselines:"
           git status --porcelain -- OtterTwinTests/__Snapshots__
 
       - name: Upload recorded baselines
@@ -166,3 +199,17 @@ jobs:
           name: recorded-snapshots
           path: OtterTwinTests/__Snapshots__
           retention-days: 30
+
+      - name: Commit recorded baselines to this ci/record-snapshots branch
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/ci/record-snapshots/')
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- OtterTwinTests/__Snapshots__)" ]; then
+            echo "Recorded baselines are identical to the committed ones; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add OtterTwinTests/__Snapshots__
+          git commit -m "Record snapshot baselines on CI runner ($(sw_vers -productVersion), Xcode ${XCODE_VERSION})"
+          git push origin "HEAD:${GITHUB_REF}"

@@ -53,14 +53,19 @@ open build/Build/Products/Debug/OtterTwin.app
 
 ## Tests
 
-Unit and snapshot tests (the same command CI runs in the `build-and-test` job):
+Unit and snapshot tests (equivalent to the CI `build-and-test` job; `TEST_RUNNER_SNAPSHOT_TESTING_RECORD=never`
+makes a missing or different snapshot fail instead of being recorded):
 
 ```bash
 xcodegen generate
+TEST_RUNNER_SNAPSHOT_TESTING_RECORD=never \
 xcodebuild test -project OtterTwin.xcodeproj -scheme OtterTwinTests \
   -destination 'platform=macOS' -disableAutomaticPackageResolution \
   CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 ```
+
+Snapshot baselines are recorded on the CI runner (macos-15), so they may not match a local Mac
+pixel for pixel; CI is the reference.
 
 ### Continuous integration
 
@@ -73,9 +78,10 @@ xcodebuild test -project OtterTwin.xcodeproj -scheme OtterTwinTests \
   the check. On failure the `.xcresult` bundle and the full log are uploaded as artifacts.
 - **`ui-tests`** (non-blocking): runs the XCUITest suite and always uploads its results.
   It is informational only and is **not** counted as verified coverage.
-- **`record-snapshots`** (manual, *Run workflow* with "record snapshots" checked): records
-  snapshot baselines on the CI runner and uploads them as an artifact. Baselines are never
-  committed automatically; changes go through a dedicated PR with before/after images.
+- **`record-snapshots`**: records snapshot baselines on the CI runner. Triggered manually
+  (*Run workflow* with "record snapshots" checked → artifact only) or by pushing a branch named
+  `ci/record-snapshots/<name>` (the job commits the recorded images back to that branch only).
+  Baselines never reach `main` except through a dedicated PR with before/after images.
 
 Not covered by CI: real SMB/NAS transfers (need a real server) and anything that needs the
 owner's machine. These are validated manually through the gate issues.
