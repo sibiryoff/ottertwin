@@ -47,6 +47,11 @@ targets:
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_ENTITLEMENTS: OtterTwin/Resources/OtterTwin.entitlements
+      configs:
+        Release:
+          # Ad-hoc ("Sign to Run Locally") signing would otherwise inject
+          # get-task-allow, letting any debugger attach to the installed app.
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
     dependencies:
       - framework: NetFS.framework
         embed: false

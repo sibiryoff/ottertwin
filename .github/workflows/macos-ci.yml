@@ -231,7 +231,7 @@ jobs:
           ENTITLEMENTS="$(codesign -d --entitlements :- "$APP" 2>/dev/null || true)"
           echo "Entitlements:"
           echo "$ENTITLEMENTS"
-          for key in com.apple.security.app-sandbox com.apple.security.files.user-selected.read-write keychain-access-groups; do
+          for key in com.apple.security.app-sandbox com.apple.security.files.user-selected.read-write keychain-access-groups com.apple.security.get-task-allow; do
             if echo "$ENTITLEMENTS" | grep -qF "$key"; then
               echo "::error::Release app is signed with $key"
               exit 1

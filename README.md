@@ -132,7 +132,7 @@ XcodeGen 2.42.0):
 - **`release-build`** (also required): lints `scripts/install-local.sh` with `shellcheck`, runs its
   `--dry-run`, then uses it to build and install a Release app (ad-hoc signed) twice into a temp
   folder, and checks `codesign --verify --deep --strict`, the Hardened Runtime, that the app has
-  no sandbox/keychain-group entitlements and that the build SHA is stamped. On pushes to `main`
+  no sandbox/keychain-group/get-task-allow entitlements and that the build SHA is stamped. On pushes to `main`
   it uploads the app as the `OtterTwin-<sha>.zip` artifact (14 days).
 - **`record-snapshots`**: records snapshot baselines on the CI runner. Triggered manually
   (*Run workflow* with "record snapshots" checked → artifact only) or by pushing a branch named
