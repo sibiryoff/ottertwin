@@ -11,6 +11,9 @@ inputs:
   xcodegen-version:
     description: XcodeGen release to install
     required: true
+  xcodegen-sha256:
+    description: Expected SHA-256 of the XcodeGen release xcodegen.zip (verified before unzipping)
+    required: true
 
 runs:
   using: composite
@@ -37,7 +40,11 @@ runs:
         mkdir -p "$DEST"
         curl -fsSL --retry 3 -o "$DEST/xcodegen.zip" \
           "https://github.com/yonaskolb/XcodeGen/releases/download/${{ inputs.xcodegen-version }}/xcodegen.zip"
-        shasum -a 256 "$DEST/xcodegen.zip"
+        if ! echo "${{ inputs.xcodegen-sha256 }}  $DEST/xcodegen.zip" | shasum -a 256 -c -; then
+          echo "::error::XcodeGen ${{ inputs.xcodegen-version }} archive checksum mismatch; refusing to run it."
+          shasum -a 256 "$DEST/xcodegen.zip"
+          exit 1
+        fi
         unzip -q "$DEST/xcodegen.zip" -d "$DEST"
         BIN_DIR="$DEST/xcodegen/bin"
         ACTUAL="$("$BIN_DIR/xcodegen" --version)"

@@ -27,6 +27,9 @@ permissions:
 env:
   XCODE_VERSION: "16.4"
   XCODEGEN_VERSION: "2.42.0"
+  # SHA-256 of https://github.com/yonaskolb/XcodeGen/releases/download/2.42.0/xcodegen.zip
+  # (recorded from the first CI download on 2026-10-08). Update together with the version.
+  XCODEGEN_SHA256: "a760b4bf97460341316a2c00d8c87b2946c6c2729eb57e9a72abb3ef7bc0ef82"
   # Shared xcodebuild arguments. No signing secrets are needed for unit tests.
   XCB_COMMON: >-
     -project OtterTwin.xcodeproj
@@ -52,6 +55,7 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
           xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
 
       - name: Build and run unit + snapshot tests (OtterTwinTests)
         env:
@@ -118,6 +122,7 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
           xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
 
       - name: Run UI tests (OtterTwinUITests)
         run: |
@@ -176,6 +181,7 @@ jobs:
         with:
           xcode-version: ${{ env.XCODE_VERSION }}
           xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
 
       - name: Record snapshot baselines on this runner
         env:

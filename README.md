@@ -26,7 +26,7 @@ A macOS two-panel file manager designed for safe file transfers to NAS devices o
 
 - macOS 14.0+
 - Xcode 16.4 (the version CI uses)
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.42.0 (the version CI uses)
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.42.0 (the version CI uses; CI also verifies the release archive's SHA-256)
 
 ## Build
 
