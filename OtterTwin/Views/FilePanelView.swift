@@ -7,6 +7,8 @@ struct FilePanelView: View {
     let isActive: Bool
     var onActivate: () -> Void = {}
     var onProviderChange: (any VFSProvider) -> Void = { _ in }
+    /// Changing this value re-lists the current directory (e.g. after a delete).
+    var reloadToken: Int = 0
 
     @State private var items: [FileItem] = []
     @State private var isLoading = false
@@ -65,7 +67,7 @@ struct FilePanelView: View {
         }
         .frame(minWidth: 300)
         .accessibilityIdentifier("panel.\(panelID)")
-        .task(id: path) { await loadDirectory() }
+        .task(id: LoadKey(path: path, reloadToken: reloadToken)) { await loadDirectory() }
         .sheet(isPresented: $showSMBConnect) {
             SMBConnectView(onConnect: { smbProvider in
                 // After mounting, navigate to the share's local mount point and
@@ -78,6 +80,11 @@ struct FilePanelView: View {
                 showSMBConnect = false
             })
         }
+    }
+
+    private struct LoadKey: Equatable {
+        let path: URL
+        let reloadToken: Int
     }
 
     // MARK: - Sorting

@@ -324,25 +324,31 @@ actor FileOperationService {
 
     // MARK: - Delete
 
+    /// Deletes `urls` one by one. A failure on one item never stops the others
+    /// and is never swallowed: it is recorded in the returned result.
+    /// Callers are responsible for obtaining user confirmation first.
     func deleteItems(
         urls: [URL],
         mode: DeleteMode,
         provider: any VFSProvider
     ) async -> DeleteResult {
-        var succeeded: [URL] = []
-        var failed: [(url: URL, error: Error)] = []
+        var result = DeleteResult()
         for url in urls {
             do {
                 switch mode {
-                case .trash:     try await provider.trash(url)
-                case .permanent: try await provider.delete(url)
+                case .trash:
+                    try await provider.trash(url)
+                    result.trashedURLs.append(url)
+                case .permanent:
+                    try await provider.delete(url)
+                    result.deletedURLs.append(url)
                 }
-                succeeded.append(url)
             } catch {
-                failed.append((url: url, error: error))
+                Self.logger.error("Delete (\(String(describing: mode), privacy: .public)) failed for \(url.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .public)")
+                result.failures.append(DeleteFailure(url: url, mode: mode, error: error))
             }
         }
-        return DeleteResult(mode: mode, succeededURLs: succeeded, failedURLs: failed)
+        return result
     }
 
     // MARK: - Private helpers

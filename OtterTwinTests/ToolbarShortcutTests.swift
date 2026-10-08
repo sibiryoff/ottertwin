@@ -107,10 +107,16 @@ final class ToolbarShortcutTests: XCTestCase {
 
         var copyCount = 0
         var moveCount = 0
+        var deleteCount = 0
         var controlCount = 0
         let window = host(
             HStack {
-                ToolbarView(appState: appState, onCopy: { copyCount += 1 }, onMove: { moveCount += 1 })
+                ToolbarView(
+                    appState: appState,
+                    onCopy: { copyCount += 1 },
+                    onMove: { moveCount += 1 },
+                    onDelete: { deleteCount += 1 }
+                )
                 // Control: proves this harness delivers unmodified key equivalents.
                 Button("Control") { controlCount += 1 }
                     .keyboardShortcut("x", modifiers: [])
@@ -125,6 +131,7 @@ final class ToolbarShortcutTests: XCTestCase {
         XCTAssertEqual(controlCount, 1, "Harness did not deliver the control key equivalent; the assertions below would be vacuous")
         XCTAssertEqual(copyCount, 0, "An unmodified key started a copy")
         XCTAssertEqual(moveCount, 0, "An unmodified key started a move")
+        XCTAssertEqual(deleteCount, 0, "An unmodified key started a delete")
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileA.path), "An unmodified key started a delete")
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileB.path), "An unmodified key started a delete")
         XCTAssertEqual(appState.leftSelection, [fileA, fileB], "Selection changed: some toolbar action ran")

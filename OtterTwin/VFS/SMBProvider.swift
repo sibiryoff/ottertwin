@@ -62,8 +62,14 @@ final class SMBProvider: VFSProvider {
 
     var supportsTrash: Bool { false }
 
-    func trash(_ url: URL) async throws {
+    func trash(_ url: URL) async throws -> URL? {
         throw TrashNotSupportedError()
+    }
+
+    /// Only paths inside the current mount point belong to this share.
+    func manages(_ url: URL) -> Bool {
+        guard let mountURL else { return false }
+        return url.isContained(in: mountURL)
     }
 
     func delete(_ url: URL) async throws {

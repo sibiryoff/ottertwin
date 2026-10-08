@@ -49,9 +49,26 @@ final class LocalProviderTests: XCTestCase {
     func testTrashFile() async throws {
         let file = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
         try "x".data(using: .utf8)!.write(to: file)
-        try await provider.trash(file)
+        let trashed = try await provider.trash(file)
         XCTAssertFalse(fm.fileExists(atPath: file.path),
                        "File should no longer exist at original path after trash")
+        let trashedURL = try XCTUnwrap(trashed, "trashItem should report the new location")
+        XCTAssertEqual(try String(contentsOf: trashedURL, encoding: .utf8), "x")
+        try fm.removeItem(at: trashedURL)
+    }
+
+    func testTrashMissingFileThrows() async {
+        let missing = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString + "-missing")
+        do {
+            try await provider.trash(missing)
+            XCTFail("Trashing a missing file must throw")
+        } catch {
+            // expected
+        }
+    }
+
+    func testManagesEveryPath() {
+        XCTAssertTrue(provider.manages(URL(fileURLWithPath: "/Volumes/anything")))
     }
 
     func testSupportsTrash() {

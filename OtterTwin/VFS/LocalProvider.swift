@@ -69,8 +69,13 @@ final class LocalProvider: VFSProvider {
 
     var supportsTrash: Bool { true }
 
-    func trash(_ url: URL) async throws {
-        try fm.trashItem(at: url, resultingItemURL: nil)
+    @discardableResult
+    func trash(_ url: URL) async throws -> URL? {
+        let access = try ScopedAccess(url: url)
+        defer { access.stop() }
+        var resultingURL: NSURL?
+        try fm.trashItem(at: url, resultingItemURL: &resultingURL)
+        return resultingURL as URL?
     }
 
     func delete(_ url: URL) async throws {
