@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 OtterTwin is a macOS 14+ two-panel file manager (inspired by Total Commander) designed for safe file transfers to NAS devices over SMB. Its defining feature is SHA-256 checksum verification: the source hash is computed inline during copy with zero extra I/O, and the destination is verified afterward to guarantee data integrity.
 
+## Autonomous cloud sessions
+
+Cloud agent sessions run on Linux and cannot run `xcodebuild` or `xcodegen`. Builds and tests run only in the macOS GitHub Actions workflow; read results via the GitHub REST API. Before starting any task, read `docs/agent-workflow.md` — it defines how work is picked, tested, reviewed, merged and reported, plus non-negotiable data-safety rules. The roadmap and status live in GitHub issue #40 "Roadmap & factory status".
+
 ## Build & Run
 
 The `.xcodeproj` is generated from `project.yml` via [xcodegen](https://github.com/yonaskolb/XcodeGen). Regenerate it after editing `project.yml`:
