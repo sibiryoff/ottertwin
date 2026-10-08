@@ -322,6 +322,35 @@ actor FileOperationService {
         return candidate
     }
 
+    // MARK: - Delete
+
+    /// Deletes `urls` one by one. A failure on one item never stops the others
+    /// and is never swallowed: it is recorded in the returned result.
+    /// Callers are responsible for obtaining user confirmation first.
+    func deleteItems(
+        urls: [URL],
+        mode: DeleteMode,
+        provider: any VFSProvider
+    ) async -> DeleteResult {
+        var result = DeleteResult()
+        for url in urls {
+            do {
+                switch mode {
+                case .trash:
+                    try await provider.trash(url)
+                    result.trashedURLs.append(url)
+                case .permanent:
+                    try await provider.delete(url)
+                    result.deletedURLs.append(url)
+                }
+            } catch {
+                Self.logger.error("Delete (\(String(describing: mode), privacy: .public)) failed for \(url.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)")
+                result.failures.append(DeleteFailure(url: url, mode: mode, error: error))
+            }
+        }
+        return result
+    }
+
     // MARK: - Private helpers
 
     private func isSameVolume(_ a: URL, _ b: URL) -> Bool {

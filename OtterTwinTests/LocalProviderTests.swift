@@ -46,6 +46,60 @@ final class LocalProviderTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: file.path))
     }
 
+    func testTrashUsesInjectedTrasherNotRealTrash() async throws {
+        let dir = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: dir) }  // test cleanup only
+        let file = dir.appendingPathComponent("x.txt")
+        try "x".data(using: .utf8)!.write(to: file)
+        let spy = TrashSpy(fakeTrash: dir.appendingPathComponent("FakeTrash"))
+        let trashingProvider = LocalProvider(trasher: spy.trash)
+
+        let trashed = try await trashingProvider.trash(file)
+
+        XCTAssertEqual(spy.calls, [file])
+        XCTAssertFalse(fm.fileExists(atPath: file.path))
+        let trashedURL = try XCTUnwrap(trashed, "Trash location is passed through")
+        XCTAssertEqual(try String(contentsOf: trashedURL, encoding: .utf8), "x")
+    }
+
+    func testTrashErrorPropagates() async throws {
+        let file = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try "y".data(using: .utf8)!.write(to: file)
+        defer { try? fm.removeItem(at: file) }  // test cleanup only
+        let spy = TrashSpy(fakeTrash: fm.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        spy.fault = InjectedFault(message: "Volume has no Trash")
+        let trashingProvider = LocalProvider(trasher: spy.trash)
+
+        do {
+            try await trashingProvider.trash(file)
+            XCTFail("Trash failure must be thrown, not swallowed")
+        } catch {
+            XCTAssertEqual(error as? InjectedFault, InjectedFault(message: "Volume has no Trash"))
+        }
+        XCTAssertTrue(fm.fileExists(atPath: file.path))
+    }
+
+    func testDeleteDoesNotUseTrasher() async throws {
+        let file = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try "z".data(using: .utf8)!.write(to: file)
+        let spy = TrashSpy(fakeTrash: fm.temporaryDirectory.appendingPathComponent(UUID().uuidString))
+        let trashingProvider = LocalProvider(trasher: spy.trash)
+
+        try await trashingProvider.delete(file)
+
+        XCTAssertTrue(spy.calls.isEmpty)
+        XCTAssertFalse(fm.fileExists(atPath: file.path))
+    }
+
+    func testManagesEveryPath() {
+        XCTAssertTrue(provider.manages(URL(fileURLWithPath: "/Volumes/anything")))
+    }
+
+    func testSupportsTrash() {
+        XCTAssertTrue(provider.supportsTrash)
+    }
+
     // MARK: - Move
 
     func testMoveFile() async throws {

@@ -4,6 +4,8 @@ struct ToolbarView: View {
     @Bindable var appState: AppState
     let onCopy: () -> Void
     let onMove: () -> Void
+    /// Must run the confirmed delete flow (`DeleteFlow`); never delete directly.
+    let onDelete: () -> Void
     @Environment(\.openSettings) private var openSettings
 
     private var hasSelection: Bool { !appState.sourceSelection.isEmpty }
@@ -20,7 +22,7 @@ struct ToolbarView: View {
                 .disabled(!hasSelection)
                 .accessibilityIdentifier("toolbar.move")
 
-            Button("F8  Delete") { deleteSelected() }
+            Button("F8  Delete") { onDelete() }
                 .disabled(!hasSelection)
                 .accessibilityIdentifier("toolbar.delete")
 
@@ -47,19 +49,6 @@ struct ToolbarView: View {
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
-    }
-
-    private func deleteSelected() {
-        let provider = LocalProvider()
-        let urls = appState.sourceSelection
-        Task {
-            await withThrowingTaskGroup(of: Void.self) { group in
-                for url in urls { group.addTask { try await provider.delete(url) } }
-                try? await group.waitForAll()
-            }
-            appState.leftSelection = []
-            appState.rightSelection = []
-        }
     }
 
     private func refreshBothPanels() async {

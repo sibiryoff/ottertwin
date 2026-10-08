@@ -1,7 +1,23 @@
 import Foundation
 
 final class LocalProvider: VFSProvider {
+    /// Moves an item to the Trash and returns its new location, if known.
+    typealias Trasher = (URL) throws -> URL?
+
     private let fm = FileManager.default
+    private let trasher: Trasher
+
+    /// `trasher` is a seam for tests, so they never touch the real `~/.Trash`.
+    init(trasher: @escaping Trasher = LocalProvider.systemTrash) {
+        self.trasher = trasher
+    }
+
+    /// The real macOS Trash via `FileManager.trashItem`.
+    static func systemTrash(_ url: URL) throws -> URL? {
+        var resultingURL: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
+        return resultingURL as URL?
+    }
 
     // MARK: - List
 
@@ -66,6 +82,15 @@ final class LocalProvider: VFSProvider {
     }
 
     // MARK: - Delete
+
+    var supportsTrash: Bool { true }
+
+    @discardableResult
+    func trash(_ url: URL) async throws -> URL? {
+        let access = try ScopedAccess(url: url)
+        defer { access.stop() }
+        return try trasher(url)
+    }
 
     func delete(_ url: URL) async throws {
         let access = try ScopedAccess(url: url)

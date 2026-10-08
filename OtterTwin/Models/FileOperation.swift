@@ -51,3 +51,37 @@ enum ConflictResolution {
     case overwrite
     case rename  // appends "-2", "-3", … suffix
 }
+
+// MARK: - Delete types
+
+enum DeleteMode {
+    case trash      // Move to macOS Trash (default)
+    case permanent  // Irreversible removal — requires a separate explicit confirmation
+}
+
+struct DeleteFailure {
+    let url: URL
+    let mode: DeleteMode
+    let error: Error
+}
+
+/// Per-item outcome of a delete operation. Nothing is dropped: every requested
+/// URL ends up in exactly one of the three lists.
+struct DeleteResult {
+    var trashedURLs: [URL] = []
+    var deletedURLs: [URL] = []
+    var failures: [DeleteFailure] = []
+
+    var succeededURLs: [URL] { trashedURLs + deletedURLs }
+    var hasFailures: Bool { !failures.isEmpty }
+
+    /// Replaces the failures of `self` with the outcome of a follow-up
+    /// operation that retried exactly those failed URLs.
+    func applyingRetry(_ retry: DeleteResult) -> DeleteResult {
+        DeleteResult(
+            trashedURLs: trashedURLs + retry.trashedURLs,
+            deletedURLs: deletedURLs + retry.deletedURLs,
+            failures: retry.failures
+        )
+    }
+}

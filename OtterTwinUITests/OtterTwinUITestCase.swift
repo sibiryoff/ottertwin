@@ -7,8 +7,12 @@ class OtterTwinUITestCase: XCTestCase {
         super.setUp()
         continueAfterFailure = false
         app = XCUIApplication()
+        configure(app)
         app.launch()
     }
+
+    /// Override to set launch arguments/environment before the app launches.
+    func configure(_ app: XCUIApplication) {}
 
     override func tearDown() {
         app.terminate()
