@@ -1,0 +1,168 @@
+name: macOS CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      record_snapshots:
+        description: "Record snapshot baselines on the CI runner and upload them as an artifact (never committed automatically)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: macos-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  XCODE_VERSION: "16.4"
+  XCODEGEN_VERSION: "2.42.0"
+  # Shared xcodebuild arguments. No signing secrets are needed for unit tests.
+  XCB_COMMON: >-
+    -project OtterTwin.xcodeproj
+    -destination platform=macOS,arch=arm64
+    -derivedDataPath build/DerivedData
+    -clonedSourcePackagesDirPath build/SourcePackages
+    -disableAutomaticPackageResolution
+  XCB_NO_SIGNING: >-
+    CODE_SIGN_IDENTITY=
+    CODE_SIGNING_REQUIRED=NO
+    CODE_SIGNING_ALLOWED=NO
+
+jobs:
+  build-and-test:
+    name: build-and-test
+    if: github.event_name != 'workflow_dispatch' || !inputs.record_snapshots
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-project
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+
+      - name: Build and run unit + snapshot tests (OtterTwinTests)
+        env:
+          # Forwarded to the test process: never record snapshots in CI, so a
+          # missing or different baseline is always a failure.
+          TEST_RUNNER_SNAPSHOT_TESTING_RECORD: never
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          xcodebuild test $XCB_COMMON \
+            -scheme OtterTwinTests \
+            -resultBundlePath build/OtterTwinTests.xcresult \
+            $XCB_NO_SIGNING \
+            2>&1 | tee build/logs/OtterTwinTests.log
+
+      - name: Test summary
+        if: always()
+        run: |
+          if [ -d build/OtterTwinTests.xcresult ]; then
+            xcrun xcresulttool get test-results summary --path build/OtterTwinTests.xcresult --compact || true
+          fi
+
+      - name: Check snapshot baselines were not modified
+        if: always()
+        run: |
+          CHANGED="$(git status --porcelain -- OtterTwinTests/__Snapshots__)"
+          if [ -n "$CHANGED" ]; then
+            echo "::error::Snapshot baselines were written during CI. Baselines must only change in a dedicated, reviewed PR."
+            echo "$CHANGED"
+            exit 1
+          fi
+
+      - name: Upload test results and logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OtterTwinTests-results
+          path: |
+            build/OtterTwinTests.xcresult
+            build/logs
+          retention-days: 14
+
+  ui-tests:
+    name: ui-tests (XCUITest, non-blocking)
+    if: github.event_name != 'workflow_dispatch' || !inputs.record_snapshots
+    runs-on: macos-15
+    timeout-minutes: 30
+    # XCUITest on hosted runners is not yet a reliable signal; it is reported
+    # but does not fail the workflow. It is NOT counted as verified coverage.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-project
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+
+      - name: Run UI tests (OtterTwinUITests)
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          # UI tests need a launchable, ad-hoc signed app and test runner.
+          xcodebuild test $XCB_COMMON \
+            -scheme OtterTwinUITests \
+            -resultBundlePath build/OtterTwinUITests.xcresult \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= \
+            2>&1 | tee build/logs/OtterTwinUITests.log
+
+      - name: Test summary
+        if: always()
+        run: |
+          if [ -d build/OtterTwinUITests.xcresult ]; then
+            xcrun xcresulttool get test-results summary --path build/OtterTwinUITests.xcresult --compact || true
+          fi
+
+      - name: Upload UI test results and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OtterTwinUITests-results
+          path: |
+            build/OtterTwinUITests.xcresult
+            build/logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  record-snapshots:
+    name: record-snapshots (manual)
+    if: github.event_name == 'workflow_dispatch' && inputs.record_snapshots
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-project
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+
+      - name: Record snapshot baselines on this runner
+        env:
+          TEST_RUNNER_SNAPSHOT_TESTING_RECORD: all
+        run: |
+          set -uo pipefail
+          mkdir -p build/logs
+          # Recording makes every snapshot assertion fail by design; ignore the exit code.
+          xcodebuild test $XCB_COMMON \
+            -scheme OtterTwinTests \
+            -only-testing:OtterTwinTests/SnapshotTests \
+            $XCB_NO_SIGNING \
+            2>&1 | tee build/logs/record-snapshots.log || true
+          git status --porcelain -- OtterTwinTests/__Snapshots__
+
+      - name: Upload recorded baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: recorded-snapshots
+          path: OtterTwinTests/__Snapshots__
+          retention-days: 30

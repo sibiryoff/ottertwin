@@ -16,7 +16,9 @@ Run all UI tests and snapshot tests for the project, analyze results, and fix an
 
 ### 1. Identify project parameters
 
+- If the project has a `project.yml` (XcodeGen), the `.xcodeproj` is generated and not tracked in git: run `xcodegen generate` first (OtterTwin: XcodeGen 2.42.0, Xcode 16.4, schemes `OtterTwinTests` and `OtterTwinUITests`)
 - Find `.xcodeproj` or `.xcworkspace` in the project root
+- On a Linux agent session you cannot run these commands; read the macOS CI results (`.github/workflows/macos-ci.yml`) instead
 - Identify the scheme that contains the UI Test target (usually `<AppName>UITests`)
 - If the scheme is unknown, run: `xcodebuild -list`
 

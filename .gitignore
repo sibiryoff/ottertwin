@@ -22,3 +22,13 @@ build/
 .claude/
 
 /tasks/
+# Generated Xcode project (run `xcodegen generate`). Only the SwiftPM lockfile is
+# tracked so dependency versions stay reproducible.
+/OtterTwin.xcodeproj/*
+!/OtterTwin.xcodeproj/project.xcworkspace/
+/OtterTwin.xcodeproj/project.xcworkspace/*
+!/OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/
+/OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/*
+!/OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+/OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/*
+!/OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
