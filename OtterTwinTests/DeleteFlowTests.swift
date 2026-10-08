@@ -150,7 +150,8 @@ final class DeleteFlowTests: XCTestCase {
 
         XCTAssertEqual(result.trashedURLs, [file])
         XCTAssertFalse(exists(file))
-        let trashDir = try fm.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: file, create: false)
+        // Resolve the Trash for the (still existing) parent folder; the file itself is gone.
+        let trashDir = try fm.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: panelDir, create: false)
         let trashed = trashDir.appendingPathComponent(unique)
         XCTAssertTrue(exists(trashed), "Item must be in the Trash, not permanently deleted")
         if exists(trashed) {

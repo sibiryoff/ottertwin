@@ -44,7 +44,8 @@ final class DeleteServiceTests: XCTestCase {
         XCTAssertFalse(result.hasFailures)
         XCTAssertFalse(fm.fileExists(atPath: file.path), "File should no longer exist at original path after trash")
         // Independent check: the item is in the Trash with its content; then clean it up.
-        let trashDir = try fm.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: file, create: false)
+        // Resolve the Trash for the (still existing) parent folder; the file itself is gone.
+        let trashDir = try fm.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: tempDir, create: false)
         let trashed = trashDir.appendingPathComponent(unique)
         XCTAssertTrue(fm.fileExists(atPath: trashed.path))
         if fm.fileExists(atPath: trashed.path) {
