@@ -34,24 +34,20 @@ final class DeleteServiceTests: XCTestCase {
     // MARK: - Local delete success
 
     func testLocalTrashSuccess() async throws {
-        let unique = "OtterTwin-DeleteServiceTests-\(UUID().uuidString).txt"
-        let file = try makeFile(unique, "hello")
+        let file = try makeFile("hello.txt", "hello")
+        let spy = TrashSpy(fakeTrash: tempDir.appendingPathComponent("FakeTrash"))
 
-        let result = await makeService().deleteItems(urls: [file], mode: .trash, provider: LocalProvider())
+        let result = await makeService().deleteItems(
+            urls: [file], mode: .trash, provider: LocalProvider(trasher: spy.trash)
+        )
 
         XCTAssertEqual(result.trashedURLs, [file])
         XCTAssertTrue(result.deletedURLs.isEmpty)
         XCTAssertFalse(result.hasFailures)
-        XCTAssertFalse(fm.fileExists(atPath: file.path), "File should no longer exist at original path after trash")
-        // Independent check: the item is in the Trash with its content; then clean it up.
-        // Resolve the Trash for the (still existing) parent folder; the file itself is gone.
-        let trashDir = try fm.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: tempDir, create: false)
-        let trashed = trashDir.appendingPathComponent(unique)
-        XCTAssertTrue(fm.fileExists(atPath: trashed.path))
-        if fm.fileExists(atPath: trashed.path) {
-            XCTAssertEqual(try String(contentsOf: trashed, encoding: .utf8), "hello")
-            try fm.removeItem(at: trashed)
-        }
+        XCTAssertEqual(spy.calls, [file], "Trash mode must go through the trasher")
+        XCTAssertFalse(fm.fileExists(atPath: file.path))
+        let trashed = spy.fakeTrash.appendingPathComponent("hello.txt")
+        XCTAssertEqual(try String(contentsOf: trashed, encoding: .utf8), "hello")
     }
 
     func testLocalPermanentDeleteSuccess() async throws {
@@ -60,13 +56,17 @@ final class DeleteServiceTests: XCTestCase {
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
         try Data("x".utf8).write(to: dir.appendingPathComponent("inner.txt"))
 
-        let result = await makeService().deleteItems(urls: [file, dir], mode: .permanent, provider: LocalProvider())
+        let spy = TrashSpy(fakeTrash: tempDir.appendingPathComponent("FakeTrash"))
+        let result = await makeService().deleteItems(
+            urls: [file, dir], mode: .permanent, provider: LocalProvider(trasher: spy.trash)
+        )
 
         XCTAssertEqual(result.deletedURLs, [file, dir])
         XCTAssertTrue(result.trashedURLs.isEmpty)
         XCTAssertFalse(result.hasFailures)
         XCTAssertFalse(fm.fileExists(atPath: file.path))
         XCTAssertFalse(fm.fileExists(atPath: dir.path))
+        XCTAssertTrue(spy.calls.isEmpty, "Permanent mode must not use the Trash")
     }
 
     // MARK: - Partial failure
@@ -90,17 +90,30 @@ final class DeleteServiceTests: XCTestCase {
 
     // MARK: - Provider failure
 
-    func testSMBProviderTrashFailureIsCollected() async throws {
+    func testDisconnectedSMBProviderTrashFailureIsCollected() async throws {
         let file = try makeFile("y.txt")
-        // SMBProvider cannot Trash; it must throw rather than silently delete.
+        // SMB attempts Trash (macOS supports it on some servers); a provider
+        // that is not connected must throw rather than touch anything.
         let provider = SMBProvider(connection: ConnectionInfo(host: "fake", share: "s", username: "u"))
-        XCTAssertFalse(provider.supportsTrash)
+        XCTAssertTrue(provider.supportsTrash)
 
         let result = await makeService().deleteItems(urls: [file], mode: .trash, provider: provider)
 
         XCTAssertEqual(result.failures.count, 1)
-        XCTAssertTrue(result.failures.first?.error is TrashNotSupportedError)
+        XCTAssertTrue(result.failures.first?.error is NotConnectedError)
         XCTAssertTrue(fm.fileExists(atPath: file.path), "File still exists because the operation failed")
+    }
+
+    func testProviderWithoutTrashThrowsTrashNotSupported() async throws {
+        let file = try makeFile("z.txt")
+        let provider = FaultInjectingDeleteProvider(
+            fakeTrash: tempDir.appendingPathComponent("FakeTrash"), supportsTrash: false
+        )
+
+        let result = await makeService().deleteItems(urls: [file], mode: .trash, provider: provider)
+
+        XCTAssertTrue(result.failures.first?.error is TrashNotSupportedError)
+        XCTAssertTrue(fm.fileExists(atPath: file.path))
     }
 
     func testInjectedProviderFailureIsCollected() async throws {

@@ -98,3 +98,24 @@ final class ScriptedDeleteConfirmer: DeleteConfirming {
         }
     }
 }
+
+/// Stand-in for `LocalProvider`'s trasher: "trashes" by moving the item into a
+/// test-owned folder, so tests never touch the real `~/.Trash`.
+final class TrashSpy {
+    let fakeTrash: URL
+    var fault: InjectedFault?
+    private(set) var calls: [URL] = []
+
+    init(fakeTrash: URL) {
+        self.fakeTrash = fakeTrash
+    }
+
+    func trash(_ url: URL) throws -> URL? {
+        calls.append(url)
+        if let fault { throw fault }
+        try FileManager.default.createDirectory(at: fakeTrash, withIntermediateDirectories: true)
+        let target = fakeTrash.appendingPathComponent(url.lastPathComponent)
+        try FileManager.default.moveItem(at: url, to: target)
+        return target
+    }
+}

@@ -29,6 +29,11 @@ extension VFSProvider {
     func manages(_ url: URL) -> Bool { true }
 }
 
+/// Thrown by `trash(_:)` of providers whose `supportsTrash` is false.
+struct TrashNotSupportedError: Error, LocalizedError {
+    var errorDescription: String? { "Moving to Trash is not supported for this location" }
+}
+
 
 // MARK: - ChunkedWriter
 

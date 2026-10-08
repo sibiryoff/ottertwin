@@ -60,10 +60,13 @@ final class SMBProvider: VFSProvider {
         try await provider().createDirectory(at: url)
     }
 
-    var supportsTrash: Bool { false }
+    /// macOS can Trash on some SMB servers but not others. Trash is attempted;
+    /// when it fails, the delete flow reports it and offers an explicitly
+    /// confirmed permanent delete — never a silent fallback.
+    var supportsTrash: Bool { true }
 
     func trash(_ url: URL) async throws -> URL? {
-        throw TrashNotSupportedError()
+        try await provider().trash(url)
     }
 
     /// Only paths inside the current mount point belong to this share.
@@ -101,6 +104,3 @@ struct NotConnectedError: Error, LocalizedError {
     var errorDescription: String? { "Not connected to SMB share" }
 }
 
-struct TrashNotSupportedError: Error, LocalizedError {
-    var errorDescription: String? { "Moving to Trash is not supported for remote shares" }
-}

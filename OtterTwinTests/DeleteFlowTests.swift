@@ -134,30 +134,34 @@ final class DeleteFlowTests: XCTestCase {
         XCTAssertFalse(files.contains(where: exists))
     }
 
-    /// End-to-end with the real `LocalProvider`: a local file ends up in the
-    /// user's Trash with identical content. The trashed item is removed again.
+    /// With the app's `LocalProvider` (trash seam injected, so the real
+    /// `~/.Trash` is never touched), a confirmed delete goes to the Trash.
     @MainActor
-    func testLocalFileIsMovedToRealTrashByDefault() async throws {
-        let unique = "OtterTwin-DeleteFlowTests-\(UUID().uuidString).txt"
-        let file = try makeFiles([unique])[0]
-        let original = try Data(contentsOf: file)
-        appState.leftSelection = [file]  // default provider: LocalProvider
+    func testLocalProviderRoutesToTrashByDefault() async throws {
+        let file = try makeFiles(["a.txt"])[0]
+        let spy = TrashSpy(fakeTrash: tempDir.appendingPathComponent("FakeTrash", isDirectory: true))
+        appState.leftProvider = LocalProvider(trasher: spy.trash)
+        appState.leftSelection = [file]
         XCTAssertTrue(appState.sourceProvider is LocalProvider)
+        XCTAssertTrue(appState.sourceProvider.supportsTrash)
         confirmer.trashAnswer = .moveToTrash
 
         let outcome = await runFlow()
         let result = try XCTUnwrap(outcome)
 
+        XCTAssertEqual(confirmer.trashQuestions.count, 1, "Local panel shows the Trash dialog")
+        XCTAssertTrue(confirmer.permanentQuestions.isEmpty)
+        XCTAssertEqual(spy.calls, [file])
         XCTAssertEqual(result.trashedURLs, [file])
+        XCTAssertTrue(result.deletedURLs.isEmpty)
         XCTAssertFalse(exists(file))
-        // Resolve the Trash for the (still existing) parent folder; the file itself is gone.
-        let trashDir = try fm.url(for: .trashDirectory, in: .userDomainMask, appropriateFor: panelDir, create: false)
-        let trashed = trashDir.appendingPathComponent(unique)
-        XCTAssertTrue(exists(trashed), "Item must be in the Trash, not permanently deleted")
-        if exists(trashed) {
-            XCTAssertEqual(try Data(contentsOf: trashed), original)
-            try fm.removeItem(at: trashed)
-        }
+        XCTAssertTrue(exists(spy.fakeTrash.appendingPathComponent("a.txt")))
+    }
+
+    @MainActor
+    func testDefaultAppStateProviderIsLocalWithTrash() {
+        XCTAssertTrue(AppState().sourceProvider is LocalProvider)
+        XCTAssertTrue(AppState().sourceProvider.supportsTrash)
     }
 
     // MARK: - Permanent delete needs its own confirmation

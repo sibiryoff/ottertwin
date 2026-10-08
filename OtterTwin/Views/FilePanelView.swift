@@ -71,8 +71,8 @@ struct FilePanelView: View {
         .sheet(isPresented: $showSMBConnect) {
             SMBConnectView(onConnect: { smbProvider in
                 // After mounting, navigate to the share's local mount point and
-                // propagate the provider so the toolbar delete flow knows the panel
-                // is backed by a remote share (supportsTrash == false).
+                // propagate the provider so the delete flow uses it while the panel
+                // is inside the share.
                 if let mountURL = try? smbProvider.rootURL {
                     path = mountURL
                 }

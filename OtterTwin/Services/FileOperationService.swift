@@ -344,7 +344,7 @@ actor FileOperationService {
                     result.deletedURLs.append(url)
                 }
             } catch {
-                Self.logger.error("Delete (\(String(describing: mode), privacy: .public)) failed for \(url.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .public)")
+                Self.logger.error("Delete (\(String(describing: mode), privacy: .public)) failed for \(url.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)")
                 result.failures.append(DeleteFailure(url: url, mode: mode, error: error))
             }
         }
