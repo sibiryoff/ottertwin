@@ -5,10 +5,11 @@ import AppKit
 
 /// #25: no toolbar action may be triggered by an unmodified key press.
 ///
-/// The toolbar is hosted in an offscreen window with a selection, and every
-/// printable ASCII key is sent as an unmodified key equivalent. A control view
-/// with a known unmodified shortcut proves the dispatch path actually works,
-/// so the negative assertions cannot pass vacuously.
+/// The toolbar is hosted in a test window with a selection, and every printable
+/// ASCII key plus Return/Escape/Tab/Delete is sent as an unmodified key
+/// equivalent. A control button with a known unmodified shortcut sits in the
+/// same window and must fire exactly once, proving the dispatch path works, so
+/// the negative assertions cannot pass vacuously.
 final class ToolbarShortcutTests: XCTestCase {
     private var tempDir: URL!
     private var window: NSWindow?
@@ -38,7 +39,7 @@ final class ToolbarShortcutTests: XCTestCase {
     @MainActor
     private func host<V: View>(_ view: V) -> NSWindow {
         let hosting = NSHostingView(rootView: view)
-        hosting.frame = NSRect(x: 0, y: 0, width: 700, height: 60)
+        hosting.frame = NSRect(x: 0, y: 0, width: 800, height: 60)
         let window = NSWindow(
             contentRect: hosting.frame,
             styleMask: [.titled],
@@ -83,21 +84,9 @@ final class ToolbarShortcutTests: XCTestCase {
         spinRunLoop(0.05)
     }
 
-    private static let printableKeys: [String] =
+    private static let unmodifiedKeys: [String] =
         (UInt8(ascii: " ")...UInt8(ascii: "~")).map { String(UnicodeScalar($0)) }
-
-    // MARK: - Control: the dispatch path works
-
-    @MainActor
-    func testControlUnmodifiedShortcutIsDeliveredByThisHarness() {
-        var fired = 0
-        let window = host(
-            Button("Control") { fired += 1 }
-                .keyboardShortcut("x", modifiers: [])
-        )
-        press("x", in: window)
-        XCTAssertEqual(fired, 1, "Test harness cannot deliver key equivalents; the toolbar assertions would be vacuous")
-    }
+        + ["\r", "\u{1b}", "\t", "\u{7f}"]  // Return, Escape, Tab, Delete
 
     // MARK: - #25
 
@@ -118,15 +107,22 @@ final class ToolbarShortcutTests: XCTestCase {
 
         var copyCount = 0
         var moveCount = 0
+        var controlCount = 0
         let window = host(
-            ToolbarView(appState: appState, onCopy: { copyCount += 1 }, onMove: { moveCount += 1 })
+            HStack {
+                ToolbarView(appState: appState, onCopy: { copyCount += 1 }, onMove: { moveCount += 1 })
+                // Control: proves this harness delivers unmodified key equivalents.
+                Button("Control") { controlCount += 1 }
+                    .keyboardShortcut("x", modifiers: [])
+            }
         )
 
-        for key in Self.printableKeys {
+        for key in Self.unmodifiedKeys {
             press(key, in: window)
         }
         spinRunLoop(0.3)
 
+        XCTAssertEqual(controlCount, 1, "Harness did not deliver the control key equivalent; the assertions below would be vacuous")
         XCTAssertEqual(copyCount, 0, "An unmodified key started a copy")
         XCTAssertEqual(moveCount, 0, "An unmodified key started a move")
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileA.path), "An unmodified key started a delete")
