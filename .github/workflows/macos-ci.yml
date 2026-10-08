@@ -168,6 +168,9 @@ jobs:
       contents: write   # only used to push to the ci/record-snapshots/* branch itself
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Do not leave the write token in .git/config while test code runs.
+          persist-credentials: false
 
       - uses: ./.github/actions/setup-project
         with:
@@ -202,6 +205,8 @@ jobs:
 
       - name: Commit recorded baselines to this ci/record-snapshots branch
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/ci/record-snapshots/')
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ -z "$(git status --porcelain -- OtterTwinTests/__Snapshots__)" ]; then
@@ -212,4 +217,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add OtterTwinTests/__Snapshots__
           git commit -m "Record snapshot baselines on CI runner ($(sw_vers -productVersion), Xcode ${XCODE_VERSION})"
-          git push origin "HEAD:${GITHUB_REF}"
+          AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64)"
+          echo "::add-mask::$AUTH"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" \
+            push origin "HEAD:${GITHUB_REF}"

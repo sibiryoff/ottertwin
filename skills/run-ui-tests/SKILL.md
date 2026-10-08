@@ -48,7 +48,7 @@ xcodebuild test \
 - For each failing test, determine the root cause:
   - **Element not found** → check accessibility identifier in the app source
   - **Timeout** → increase timeout in `waitForExistence` or verify the UI element actually appears
-  - **Snapshot mismatch** → if not intentional, it is a regression: fix the UI code. If the UI change was intentional, never re-record silently: in OtterTwin, baselines are recorded on CI (push a `ci/record-snapshots/<name>` branch, see README → Continuous integration) and land in a dedicated PR with before/after images (`docs/agent-workflow.md` §3.4)
+  - **Snapshot mismatch** → if not intentional, it is a regression: fix the UI code. If the UI change was intentional, never re-record silently: in OtterTwin, baselines are recorded on CI (push a `ci/record-snapshots/<name>` branch, see README → Continuous integration) and land in a dedicated PR with before/after images (`docs/agent-workflow.md` §3.4). OtterTwin baselines are @1x from CI, so snapshot tests always fail on a local Retina Mac — that is expected, not a reason to re-record
   - **Crash** → inspect the crash log, fix the bug in the app
   - **Assertion failure** → review the test logic and app behavior
 

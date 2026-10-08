@@ -64,13 +64,15 @@ xcodebuild test -project OtterTwin.xcodeproj -scheme OtterTwinTests \
   CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 ```
 
-Snapshot baselines are recorded on the CI runner (macos-15), so they may not match a local Mac
-pixel for pixel; CI is the reference.
+Snapshot baselines are recorded on the CI runner (macos-15, @1x, default accent colour), so the
+snapshot tests **always fail on a Retina Mac** (@2x). CI is the only reference; do not re-record
+baselines locally.
 
 ### Continuous integration
 
-`.github/workflows/macos-ci.yml` runs on every pull request and every push to `main`
-(`macos-15` runner, Xcode 16.4, XcodeGen 2.42.0):
+`.github/workflows/macos-ci.yml` runs on every pull request, every push to `main`, pushes to
+`ci/record-snapshots/**` branches and manual *Run workflow* (`macos-15` runner, Xcode 16.4,
+XcodeGen 2.42.0):
 
 - **`build-and-test`** (the check merges are gated on): generates the project, resolves packages strictly from
   `Package.resolved`, builds without signing secrets and runs `OtterTwinTests` (unit +
@@ -83,5 +85,6 @@ pixel for pixel; CI is the reference.
   `ci/record-snapshots/<name>` (the job commits the recorded images back to that branch only).
   Baselines never reach `main` except through a dedicated PR with before/after images.
 
-Not covered by CI: real SMB/NAS transfers (need a real server) and anything that needs the
-owner's machine. These are validated manually through the gate issues.
+Not covered by CI: real SMB/NAS transfers (need a real server), App Sandbox behaviour (the
+`ui-tests` job runs an ad-hoc signed app without the sandbox entitlements), and anything that needs
+the owner's machine. These are validated manually through the gate issues.
