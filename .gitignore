@@ -18,7 +18,10 @@ build/
 .build/
 .swiftpm/
 
-# Claude Code
-.claude/
+# Claude Code (only the project's own skills are tracked)
+.claude/*
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/ottertwin-factory/
 
 /tasks/
