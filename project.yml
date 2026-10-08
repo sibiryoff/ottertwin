@@ -26,12 +26,22 @@ targets:
       - path: OtterTwin
         excludes:
           - "Resources/OtterTwin.entitlements"
+          - "Resources/Info.plist"
     resources:
       - OtterTwin/Resources/Assets.xcassets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mas.ottertwin
         GENERATE_INFOPLIST_FILE: YES
+        # Partial Info.plist merged into the generated one: only the build
+        # SHA/date keys (see BuildInfo.swift). Not managed by xcodegen `info:`.
+        INFOPLIST_FILE: OtterTwin/Resources/Info.plist
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        # Overridden on the xcodebuild command line by scripts/install-local.sh
+        # and the CI release-build job; plain Xcode builds show "unknown".
+        OTTERTWIN_GIT_SHA: ""
+        OTTERTWIN_BUILD_DATE: ""
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_CFBundleDisplayName: OtterTwin
         CODE_SIGN_STYLE: Automatic

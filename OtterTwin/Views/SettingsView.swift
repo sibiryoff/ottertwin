@@ -6,6 +6,9 @@ struct SettingsView: View {
     @State private var chunkUnit: ChunkUnit = .mb
     @State private var confirmingChecksumDisable = false
 
+    /// Injected in tests so snapshots do not depend on the commit being built.
+    var buildInfo: BuildInfo = .current
+
     enum ChunkUnit: String, CaseIterable, Identifiable {
         case kb = "KB"
         case mb = "MB"
@@ -57,6 +60,15 @@ struct SettingsView: View {
                         updateChunkSize(valueText: chunkSizeText, unit: newUnit)
                     }
                 }
+            }
+
+            Section("About this build") {
+                LabeledContent("Build") {
+                    Text(buildInfo.summary)
+                        .font(.body.monospaced())
+                        .textSelection(.enabled)
+                }
+                .accessibilityIdentifier("settings.buildInfo")
             }
         }
         .formStyle(.grouped)
