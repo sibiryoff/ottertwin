@@ -1,0 +1,229 @@
+name: macOS CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      # Pushing a branch with this prefix records snapshot baselines on the CI
+      # runner and commits them back to THAT branch only, for review in a
+      # dedicated PR. It never touches main.
+      - "ci/record-snapshots/**"
+  workflow_dispatch:
+    inputs:
+      record_snapshots:
+        description: "Record snapshot baselines on the CI runner and upload them as an artifact (never committed automatically)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: macos-ci-${{ github.event_name }}-${{ github.ref }}
+  # Superseded PR runs are cancelled; runs on main always complete.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  XCODE_VERSION: "16.4"
+  XCODEGEN_VERSION: "2.42.0"
+  # SHA-256 of https://github.com/yonaskolb/XcodeGen/releases/download/2.42.0/xcodegen.zip
+  # (recorded from the first CI download on 2026-10-08). Update together with the version.
+  XCODEGEN_SHA256: "a760b4bf97460341316a2c00d8c87b2946c6c2729eb57e9a72abb3ef7bc0ef82"
+  # Shared xcodebuild arguments. No signing secrets are needed for unit tests.
+  XCB_COMMON: >-
+    -project OtterTwin.xcodeproj
+    -destination platform=macOS,arch=arm64
+    -derivedDataPath build/DerivedData
+    -clonedSourcePackagesDirPath build/SourcePackages
+    -disableAutomaticPackageResolution
+  XCB_NO_SIGNING: >-
+    CODE_SIGN_IDENTITY=
+    CODE_SIGNING_REQUIRED=NO
+    CODE_SIGNING_ALLOWED=NO
+
+jobs:
+  build-and-test:
+    name: build-and-test
+    if: ${{ !startsWith(github.ref, 'refs/heads/ci/record-snapshots/') && !(github.event_name == 'workflow_dispatch' && inputs.record_snapshots) }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-project
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
+
+      - name: Build and run unit + snapshot tests (OtterTwinTests)
+        env:
+          # Forwarded to the test process: never record snapshots in CI, so a
+          # missing or different baseline is always a failure.
+          TEST_RUNNER_SNAPSHOT_TESTING_RECORD: never
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          xcodebuild test $XCB_COMMON \
+            -scheme OtterTwinTests \
+            -resultBundlePath build/OtterTwinTests.xcresult \
+            $XCB_NO_SIGNING \
+            2>&1 | tee build/logs/OtterTwinTests.log
+
+      - name: Test summary
+        if: always()
+        run: |
+          RESULT=build/OtterTwinTests.xcresult
+          if [ ! -d "$RESULT" ]; then
+            echo "::error::No $RESULT produced (build failure?). First compiler errors:"
+            grep -h -E "(error|fatal error):" build/logs/*.log 2>/dev/null | head -20 || true
+            exit 0
+          fi
+          xcrun xcresulttool get test-results summary --path "$RESULT" --compact > build/OtterTwinTests-summary.json || exit 0
+          jq '{result, passedTests, failedTests, skippedTests, failures: [.testFailures[]? | {test: .testIdentifierString, message: (.failureText | split("\n")[0])}]}' build/OtterTwinTests-summary.json
+          # One annotation per failing test, readable via the REST check-run annotations API.
+          jq -r '.testFailures[]? | "::error title=\(.testIdentifierString)::\(.failureText | split("\n")[0])"' build/OtterTwinTests-summary.json | head -50
+          jq -r '"### OtterTwinTests: \(.result) — \(.passedTests) passed, \(.failedTests) failed, \(.skippedTests) skipped"' build/OtterTwinTests-summary.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check snapshot baselines were not modified
+        if: always()
+        run: |
+          CHANGED="$(git status --porcelain -- OtterTwinTests/__Snapshots__)"
+          if [ -n "$CHANGED" ]; then
+            echo "::error::Snapshot baselines were written during CI. Baselines must only change in a dedicated, reviewed PR."
+            echo "$CHANGED"
+            exit 1
+          fi
+
+      - name: Upload test results and logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OtterTwinTests-results
+          path: |
+            build/OtterTwinTests.xcresult
+            build/logs
+            build/*-summary.json
+          retention-days: 14
+
+  ui-tests:
+    name: ui-tests (XCUITest, non-blocking)
+    if: ${{ !startsWith(github.ref, 'refs/heads/ci/record-snapshots/') && !(github.event_name == 'workflow_dispatch' && inputs.record_snapshots) }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    # XCUITest on hosted runners is not yet a reliable signal; it is reported
+    # but does not fail the workflow. It is NOT counted as verified coverage.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-project
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
+
+      - name: Run UI tests (OtterTwinUITests)
+        run: |
+          set -euo pipefail
+          mkdir -p build/logs
+          # UI tests need a launchable, ad-hoc signed app and test runner.
+          # The App Sandbox entitlements are not applied here: an ad-hoc signed
+          # sandboxed app cannot be spawned on the runner (RunningBoard error 5).
+          # The entitlements file itself is unchanged.
+          xcodebuild test $XCB_COMMON \
+            -scheme OtterTwinUITests \
+            -resultBundlePath build/OtterTwinUITests.xcresult \
+            CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_ENTITLEMENTS= \
+            2>&1 | tee build/logs/OtterTwinUITests.log
+
+      - name: Test summary
+        if: always()
+        run: |
+          RESULT=build/OtterTwinUITests.xcresult
+          if [ ! -d "$RESULT" ]; then
+            echo "::error::No $RESULT produced (build failure?). First compiler errors:"
+            grep -h -E "(error|fatal error):" build/logs/*.log 2>/dev/null | head -20 || true
+            exit 0
+          fi
+          xcrun xcresulttool get test-results summary --path "$RESULT" --compact > build/OtterTwinUITests-summary.json || exit 0
+          jq '{result, passedTests, failedTests, skippedTests, failures: [.testFailures[]? | {test: .testIdentifierString, message: (.failureText | split("\n")[0])}]}' build/OtterTwinUITests-summary.json
+          # One annotation per failing test, readable via the REST check-run annotations API.
+          jq -r '.testFailures[]? | "::error title=\(.testIdentifierString)::\(.failureText | split("\n")[0])"' build/OtterTwinUITests-summary.json | head -50
+          jq -r '"### OtterTwinUITests: \(.result) — \(.passedTests) passed, \(.failedTests) failed, \(.skippedTests) skipped"' build/OtterTwinUITests-summary.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload UI test results and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OtterTwinUITests-results
+          path: |
+            build/OtterTwinUITests.xcresult
+            build/logs
+          if-no-files-found: ignore
+          retention-days: 14
+
+  record-snapshots:
+    name: record-snapshots (manual)
+    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.record_snapshots) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/ci/record-snapshots/')) }}
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: write   # only used to push to the ci/record-snapshots/* branch itself
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Do not leave the write token in .git/config while test code runs.
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup-project
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
+
+      - name: Record snapshot baselines on this runner
+        env:
+          TEST_RUNNER_SNAPSHOT_TESTING_RECORD: all
+        run: |
+          set -uo pipefail
+          mkdir -p build/logs
+          # Recording makes every snapshot assertion fail by design; ignore the exit code.
+          xcodebuild test $XCB_COMMON \
+            -scheme OtterTwinTests \
+            -only-testing:OtterTwinTests/SnapshotTests \
+            $XCB_NO_SIGNING \
+            2>&1 | tee build/logs/record-snapshots.log || true
+          if ! grep -q "Record mode is on" build/logs/record-snapshots.log; then
+            echo "::error::Snapshot record mode did not reach the test process; nothing was recorded."
+            exit 1
+          fi
+          echo "Changed baselines:"
+          git status --porcelain -- OtterTwinTests/__Snapshots__
+
+      - name: Upload recorded baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: recorded-snapshots
+          path: OtterTwinTests/__Snapshots__
+          retention-days: 30
+
+      - name: Commit recorded baselines to this ci/record-snapshots branch
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/ci/record-snapshots/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- OtterTwinTests/__Snapshots__)" ]; then
+            echo "Recorded baselines are identical to the committed ones; nothing to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add OtterTwinTests/__Snapshots__
+          git commit -m "Record snapshot baselines on CI runner ($(sw_vers -productVersion), Xcode ${XCODE_VERSION})"
+          AUTH="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64)"
+          echo "::add-mask::$AUTH"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" \
+            push origin "HEAD:${GITHUB_REF}"

@@ -1,0 +1,88 @@
+name: Set up Xcode project
+description: >
+  Selects the pinned Xcode, installs the pinned XcodeGen, generates
+  OtterTwin.xcodeproj from project.yml and resolves Swift packages strictly
+  from the committed Package.resolved.
+
+inputs:
+  xcode-version:
+    description: Xcode version to select (must exist as /Applications/Xcode_<version>.app)
+    required: true
+  xcodegen-version:
+    description: XcodeGen release to install
+    required: true
+  xcodegen-sha256:
+    description: Expected SHA-256 of the XcodeGen release xcodegen.zip (verified before unzipping)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode ${{ inputs.xcode-version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        XCODE_APP="/Applications/Xcode_${{ inputs.xcode-version }}.app"
+        if [ ! -d "$XCODE_APP" ]; then
+          echo "::error::$XCODE_APP is not installed on this runner image. Available:"
+          ls -d /Applications/Xcode* || true
+          exit 1
+        fi
+        sudo xcode-select -s "$XCODE_APP"
+        xcodebuild -version
+        sw_vers
+
+    - name: Install XcodeGen ${{ inputs.xcodegen-version }}
+      shell: bash
+      run: |
+        set -euo pipefail
+        DEST="$RUNNER_TEMP/xcodegen-${{ inputs.xcodegen-version }}"
+        mkdir -p "$DEST"
+        curl -fsSL --retry 3 -o "$DEST/xcodegen.zip" \
+          "https://github.com/yonaskolb/XcodeGen/releases/download/${{ inputs.xcodegen-version }}/xcodegen.zip"
+        if ! echo "${{ inputs.xcodegen-sha256 }}  $DEST/xcodegen.zip" | shasum -a 256 -c -; then
+          echo "::error::XcodeGen ${{ inputs.xcodegen-version }} archive checksum mismatch; refusing to run it."
+          shasum -a 256 "$DEST/xcodegen.zip"
+          exit 1
+        fi
+        unzip -q "$DEST/xcodegen.zip" -d "$DEST"
+        BIN_DIR="$DEST/xcodegen/bin"
+        ACTUAL="$("$BIN_DIR/xcodegen" --version)"
+        echo "$ACTUAL"
+        if ! echo "$ACTUAL" | grep -qx "Version: ${{ inputs.xcodegen-version }}"; then
+          echo "::error::XcodeGen version mismatch: expected ${{ inputs.xcodegen-version }}, got '$ACTUAL'"
+          exit 1
+        fi
+        echo "$BIN_DIR" >> "$GITHUB_PATH"
+
+    - name: Generate Xcode project
+      shell: bash
+      run: |
+        set -euo pipefail
+        xcodegen generate --spec project.yml
+        RESOLVED="OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+        if [ ! -f "$RESOLVED" ]; then
+          echo "::error::$RESOLVED is missing after project generation"
+          exit 1
+        fi
+        xcodebuild -list -project OtterTwin.xcodeproj
+
+    - name: Cache Swift packages
+      uses: actions/cache@v4
+      with:
+        path: build/SourcePackages
+        key: spm-${{ runner.os }}-${{ hashFiles('OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+
+    - name: Resolve Swift packages from Package.resolved
+      shell: bash
+      run: |
+        set -euo pipefail
+        xcodebuild -resolvePackageDependencies \
+          -project OtterTwin.xcodeproj \
+          -scheme OtterTwin \
+          -clonedSourcePackagesDirPath build/SourcePackages \
+          -onlyUsePackageVersionsFromResolvedFile
+        if ! git diff --exit-code -- OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved; then
+          echo "::error::Package.resolved changed during resolution. Dependency versions are not reproducible; commit the updated file deliberately in a separate change."
+          exit 1
+        fi

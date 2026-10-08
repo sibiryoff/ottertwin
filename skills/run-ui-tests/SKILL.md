@@ -16,7 +16,9 @@ Run all UI tests and snapshot tests for the project, analyze results, and fix an
 
 ### 1. Identify project parameters
 
+- If the project has a `project.yml` (XcodeGen), the `.xcodeproj` is generated and not tracked in git: run `xcodegen generate` first (OtterTwin: XcodeGen 2.42.0, Xcode 16.4, schemes `OtterTwinTests` and `OtterTwinUITests`)
 - Find `.xcodeproj` or `.xcworkspace` in the project root
+- On a Linux agent session you cannot run these commands; read the macOS CI results (`.github/workflows/macos-ci.yml`) instead
 - Identify the scheme that contains the UI Test target (usually `<AppName>UITests`)
 - If the scheme is unknown, run: `xcodebuild -list`
 
@@ -46,7 +48,7 @@ xcodebuild test \
 - For each failing test, determine the root cause:
   - **Element not found** → check accessibility identifier in the app source
   - **Timeout** → increase timeout in `waitForExistence` or verify the UI element actually appears
-  - **Snapshot mismatch** → if the UI change was intentional, update the reference snapshot (re-run the test with `record: .all`); if not — this is a regression, fix the UI code
+  - **Snapshot mismatch** → if not intentional, it is a regression: fix the UI code. If the UI change was intentional, never re-record silently: in OtterTwin, baselines are recorded on CI (push a `ci/record-snapshots/<name>` branch, see README → Continuous integration) and land in a dedicated PR with before/after images (`docs/agent-workflow.md` §3.4). OtterTwin baselines are @1x from CI, so snapshot tests always fail on a local Retina Mac — that is expected, not a reason to re-record
   - **Crash** → inspect the crash log, fix the bug in the app
   - **Assertion failure** → review the test logic and app behavior
 

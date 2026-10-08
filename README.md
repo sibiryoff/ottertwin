@@ -25,14 +25,18 @@ A macOS two-panel file manager designed for safe file transfers to NAS devices o
 ## Requirements
 
 - macOS 14.0+
-- Xcode 16+
+- Xcode 16.4 (the version CI uses)
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.42.0 (the version CI uses; CI also verifies the release archive's SHA-256)
 
 ## Build
 
-The project file is generated from `project.yml` using [xcodegen](https://github.com/yonaskolb/XcodeGen):
+`OtterTwin.xcodeproj` is **not** tracked in git: it is generated from `project.yml`.
+Only `OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`
+is committed, so Swift package versions are reproducible. Regenerate the project after
+pulling or after adding/removing source files:
 
 ```bash
-brew install xcodegen
+brew install xcodegen   # make sure `xcodegen --version` prints 2.42.0
 xcodegen generate
 open OtterTwin.xcodeproj
 ```
@@ -41,6 +45,7 @@ For a command-line build (no code signing required):
 
 ```bash
 xcodebuild -project OtterTwin.xcodeproj -scheme OtterTwin -configuration Debug \
+  -derivedDataPath build \
   CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
   build
 open build/Build/Products/Debug/OtterTwin.app
@@ -48,7 +53,38 @@ open build/Build/Products/Debug/OtterTwin.app
 
 ## Tests
 
+Unit and snapshot tests (equivalent to the CI `build-and-test` job; `TEST_RUNNER_SNAPSHOT_TESTING_RECORD=never`
+makes a missing or different snapshot fail instead of being recorded):
+
 ```bash
+xcodegen generate
+TEST_RUNNER_SNAPSHOT_TESTING_RECORD=never \
 xcodebuild test -project OtterTwin.xcodeproj -scheme OtterTwinTests \
+  -destination 'platform=macOS' -disableAutomaticPackageResolution \
   CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 ```
+
+Snapshot baselines are recorded on the CI runner (macos-15, @1x, default accent colour), so the
+snapshot tests **always fail on a Retina Mac** (@2x). CI is the only reference; do not re-record
+baselines locally.
+
+### Continuous integration
+
+`.github/workflows/macos-ci.yml` runs on every pull request, every push to `main`, pushes to
+`ci/record-snapshots/**` branches and manual *Run workflow* (`macos-15` runner, Xcode 16.4,
+XcodeGen 2.42.0):
+
+- **`build-and-test`** (the check merges are gated on): generates the project, resolves packages strictly from
+  `Package.resolved`, builds without signing secrets and runs `OtterTwinTests` (unit +
+  snapshot tests). Snapshot recording is disabled, so a missing or different baseline fails
+  the check. On failure the `.xcresult` bundle and the full log are uploaded as artifacts.
+- **`ui-tests`** (non-blocking): runs the XCUITest suite and always uploads its results.
+  It is informational only and is **not** counted as verified coverage.
+- **`record-snapshots`**: records snapshot baselines on the CI runner. Triggered manually
+  (*Run workflow* with "record snapshots" checked → artifact only) or by pushing a branch named
+  `ci/record-snapshots/<name>` (the job commits the recorded images back to that branch only).
+  Baselines never reach `main` except through a dedicated PR with before/after images.
+
+Not covered by CI: real SMB/NAS transfers (need a real server), App Sandbox behaviour (the
+`ui-tests` job runs an ad-hoc signed app without the sandbox entitlements), and anything that needs
+the owner's machine. These are validated manually through the gate issues.

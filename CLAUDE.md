@@ -12,7 +12,7 @@ Cloud agent sessions run on Linux and cannot run `xcodebuild` or `xcodegen`. Bui
 
 ## Build & Run
 
-The `.xcodeproj` is generated from `project.yml` via [xcodegen](https://github.com/yonaskolb/XcodeGen). Regenerate it after editing `project.yml`:
+The `.xcodeproj` is generated from `project.yml` via [xcodegen](https://github.com/yonaskolb/XcodeGen) (CI pins XcodeGen 2.42.0 and Xcode 16.4) and is **not tracked in git** — only `OtterTwin.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is committed (gitignore exception) so package versions stay reproducible. Never hand-edit or commit `project.pbxproj`; new source files are picked up by `xcodegen generate` (CI does this on every run). Shared schemes (`OtterTwin`, `OtterTwinTests`, `OtterTwinUITests`) are declared in `project.yml`. Regenerate after pulling or editing `project.yml`:
 
 ```bash
 cd /Users/mas/projects/ottertwin
@@ -23,6 +23,7 @@ Build and run (no signing required for local dev):
 
 ```bash
 xcodebuild -project OtterTwin.xcodeproj -scheme OtterTwin -configuration Debug \
+  -derivedDataPath build \
   CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
   build
 open build/Build/Products/Debug/OtterTwin.app
@@ -46,6 +47,8 @@ xcodebuild test -project OtterTwin.xcodeproj -scheme OtterTwinTests \
   CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
   -only-testing:OtterTwinTests/ChecksumServiceTests
 ```
+
+CI: `.github/workflows/macos-ci.yml` (job `build-and-test` = the merge gate: unit + snapshot tests with snapshot recording disabled; `ui-tests` = XCUITest, non-blocking, not counted as coverage; `record-snapshots` = records baselines on the runner: manual `workflow_dispatch` uploads an artifact; pushing a `ci/record-snapshots/<name>` branch commits them back to that branch for a dedicated review PR). Agents can read job logs with the GitHub MCP `get_job_logs` tool; artifact downloads (blob storage) are blocked from agent sessions. Shared setup lives in `.github/actions/setup-project`.
 
 Tests use `XCTestCase` (not Swift Testing). The test target uses `TEST_HOST`/`BUNDLE_LOADER` pointing at the app binary. `OtterTwinApp` checks for `XCTestConfigurationFilePath` in env and renders `EmptyView` to prevent SwiftUI lifecycle from blocking the test runner.
 
@@ -82,4 +85,4 @@ Models/ ─────── Plain data types
 
 ### Extensions
 
-`VFS/Extensions.swift` — shared utilities: `URL.fileByteCount` and `Digest.hexString` (CryptoKit). After adding any new source file, re-run `xcodegen generate` so the `.xcodeproj` picks it up.
+`VFS/Extensions.swift` — shared utilities: `URL.fileByteCount` and `Digest.hexString` (CryptoKit). After adding any new source file, re-run `xcodegen generate` locally so the `.xcodeproj` picks it up (CI regenerates it automatically).

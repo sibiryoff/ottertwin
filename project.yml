@@ -68,3 +68,37 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.mas.ottertwinUITests
         GENERATE_INFOPLIST_FILE: YES
+
+# Shared schemes are declared explicitly so CI and local runs use the same,
+# reproducible build/test configuration (no reliance on Xcode auto-created schemes).
+schemes:
+  OtterTwin:
+    build:
+      targets:
+        OtterTwin: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OtterTwinTests
+    archive:
+      config: Release
+
+  OtterTwinTests:
+    build:
+      targets:
+        OtterTwinTests: [test]
+    test:
+      config: Debug
+      targets:
+        - OtterTwinTests
+
+  OtterTwinUITests:
+    build:
+      targets:
+        OtterTwinUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - OtterTwinUITests
