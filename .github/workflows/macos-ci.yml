@@ -129,9 +129,8 @@ jobs:
           set -euo pipefail
           mkdir -p build/logs
           # UI tests need a launchable, ad-hoc signed app and test runner.
-          # The App Sandbox entitlements are not applied here: an ad-hoc signed
-          # sandboxed app cannot be spawned on the runner (RunningBoard error 5).
-          # The entitlements file itself is unchanged.
+          # CODE_SIGN_ENTITLEMENTS is cleared so the test build never depends on
+          # the entitlements file (the app has no sandbox since #23 anyway).
           xcodebuild test $XCB_COMMON \
             -scheme OtterTwinUITests \
             -resultBundlePath build/OtterTwinUITests.xcresult \
@@ -162,6 +161,115 @@ jobs:
             build/OtterTwinUITests.xcresult
             build/logs
           if-no-files-found: ignore
+          retention-days: 14
+
+  release-build:
+    name: release-build
+    # Proves the personal build (#23): the install script, an ad-hoc signed
+    # Release app without the App Sandbox, and the downloadable app artifact.
+    if: ${{ !startsWith(github.ref, 'refs/heads/ci/record-snapshots/') && !(github.event_name == 'workflow_dispatch' && inputs.record_snapshots) }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-project
+        with:
+          xcode-version: ${{ env.XCODE_VERSION }}
+          xcodegen-version: ${{ env.XCODEGEN_VERSION }}
+          xcodegen-sha256: ${{ env.XCODEGEN_SHA256 }}
+
+      - name: Lint install script (shellcheck)
+        run: |
+          set -euo pipefail
+          command -v shellcheck >/dev/null 2>&1 || brew install shellcheck
+          shellcheck --version
+          shellcheck scripts/install-local.sh
+
+      - name: Install script dry run
+        run: |
+          set -euo pipefail
+          scripts/install-local.sh --dry-run | tee "$RUNNER_TEMP/dry-run.log"
+          # The plan must list every step...
+          for expected in "xcodegen generate" "xcodebuild build" "-configuration Release" "CODE_SIGN_IDENTITY=-" "codesign --verify --deep --strict" "Would install"; do
+            grep -qF -- "$expected" "$RUNNER_TEMP/dry-run.log" || { echo "::error::dry run output is missing: $expected"; exit 1; }
+          done
+          # ...and do nothing.
+          if [ -e build/install ] || [ -e /Applications/OtterTwin.app ]; then
+            echo "::error::--dry-run built or installed something"
+            exit 1
+          fi
+
+      - name: Build and install Release with the install script (twice, into a temp dir)
+        run: |
+          set -euo pipefail
+          DEST="$RUNNER_TEMP/Applications"
+          scripts/install-local.sh --dest "$DEST"
+          # Running again must succeed and keep the first install as "previous".
+          scripts/install-local.sh --dest "$DEST"
+          test -d "$DEST/OtterTwin.app"
+          test -d "$DEST/OtterTwin (previous).app"
+          if compgen -G "$DEST/.OtterTwin.app.installing-*" >/dev/null; then
+            echo "::error::staging copy left behind in $DEST"
+            exit 1
+          fi
+          {
+            echo "APP=$DEST/OtterTwin.app"
+            echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)"
+          } >> "$GITHUB_ENV"
+
+      - name: Verify code signature, hardened runtime, entitlements and build SHA
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          INFO="$(codesign -d --verbose=2 "$APP" 2>&1)"
+          echo "$INFO"
+          if ! echo "$INFO" | grep -qE "^CodeDirectory .*flags=0x[0-9a-f]+\(.*runtime.*\)"; then
+            echo "::error::Hardened Runtime is not enabled on the Release app"
+            exit 1
+          fi
+          ENTITLEMENTS="$(codesign -d --entitlements :- "$APP" 2>/dev/null)"
+          echo "Entitlements:"
+          echo "$ENTITLEMENTS"
+          # Guard against a vacuous pass: the signature must carry an entitlements plist.
+          if ! echo "$ENTITLEMENTS" | grep -qF "<plist"; then
+            echo "::error::codesign printed no entitlements plist for the Release app"
+            exit 1
+          fi
+          for key in com.apple.security.app-sandbox com.apple.security.files.user-selected.read-write keychain-access-groups com.apple.security.get-task-allow; do
+            if echo "$ENTITLEMENTS" | grep -qF "$key"; then
+              echo "::error::Release app is signed with $key"
+              exit 1
+            fi
+          done
+          STAMPED="$(/usr/libexec/PlistBuddy -c 'Print :OTGitSHA' "$APP/Contents/Info.plist")"
+          echo "Stamped SHA: $STAMPED (expected $SHORT_SHA)"
+          if [ "$STAMPED" != "$SHORT_SHA" ]; then
+            echo "::error::Info.plist OTGitSHA is '$STAMPED', expected '$SHORT_SHA'"
+            exit 1
+          fi
+          BUILD_DATE="$(/usr/libexec/PlistBuddy -c 'Print :OTBuildDate' "$APP/Contents/Info.plist")"
+          echo "Stamped build date: $BUILD_DATE"
+          case "$BUILD_DATE" in
+            ""|'$('*|unknown) echo "::error::Info.plist OTBuildDate is not stamped ('$BUILD_DATE')"; exit 1 ;;
+          esac
+
+      - name: Zip app
+        run: |
+          set -euo pipefail
+          mkdir -p build/artifact
+          ditto -c -k --keepParent "$APP" "build/artifact/OtterTwin-$SHORT_SHA.zip"
+          ls -l build/artifact
+
+      # Pushes to main (and manual runs) publish the app. After downloading, run
+      # `xattr -dr com.apple.quarantine OtterTwin.app` (see README).
+      - name: Upload app artifact
+        if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: OtterTwin-${{ env.SHORT_SHA }}
+          path: build/artifact/OtterTwin-${{ env.SHORT_SHA }}.zip
+          if-no-files-found: error
           retention-days: 14
 
   record-snapshots:

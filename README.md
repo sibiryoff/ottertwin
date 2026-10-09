@@ -28,6 +28,55 @@ A macOS two-panel file manager designed for safe file transfers to NAS devices o
 - Xcode 16.4 (the version CI uses)
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) 2.42.0 (the version CI uses; CI also verifies the release archive's SHA-256)
 
+## Install for personal use
+
+OtterTwin is built for personal use and is not distributed through the App Store, so it runs
+**without the App Sandbox** (it needs to reach your home folder and mounted network volumes
+directly). It is ad-hoc signed with the Hardened Runtime; no Apple developer account is needed.
+
+### From source (recommended)
+
+With Xcode 16.4 and XcodeGen installed (`brew install xcodegen`):
+
+```bash
+scripts/install-local.sh            # build Release and install to /Applications
+scripts/install-local.sh --dry-run  # only print what it would do
+```
+
+The script generates the Xcode project, builds a Release app signed ad hoc
+(`CODE_SIGN_IDENTITY=-`), verifies the signature and installs it as `/Applications/OtterTwin.app`.
+An existing install is kept as `/Applications/OtterTwin (previous).app` (replacing an older
+"previous"), so you can always go back one build. It prints the version and git commit it
+installed, and can be run as often as you like.
+
+**Settings → About this build** shows the commit SHA and build date of the running app.
+Builds made directly in Xcode show "unknown".
+
+### From a CI build
+
+Every push to `main` produces an `OtterTwin-<sha>.zip` artifact on the *macOS CI* workflow run
+(kept for 14 days). Unzip it, move `OtterTwin.app` to `/Applications`, then remove the download
+quarantine flag (the app is not notarized, so Gatekeeper would otherwise refuse to open it):
+
+```bash
+xattr -dr com.apple.quarantine /Applications/OtterTwin.app
+```
+
+### Permission prompts to expect
+
+Because the app is not sandboxed, macOS privacy protection (TCC) asks the first time OtterTwin
+opens a protected location. Click **Allow**:
+
+- **Desktop, Documents and Downloads folders** — one prompt per folder;
+- **Network Volumes** — when you open an SMB share under `/Volumes`;
+- **Removable Volumes** — when you open a USB/external disk;
+- **Keychain** — when a saved SMB password is read after the app was rebuilt (each ad-hoc build
+  has a new signature); choose *Always Allow*.
+
+Optional: to browse every location without per-folder prompts, add OtterTwin under
+**System Settings → Privacy & Security → Full Disk Access**. A rebuilt app may need to be
+re-added there.
+
 ## Build
 
 `OtterTwin.xcodeproj` is **not** tracked in git: it is generated from `project.yml`.
@@ -80,11 +129,15 @@ XcodeGen 2.42.0):
   the check. On failure the `.xcresult` bundle and the full log are uploaded as artifacts.
 - **`ui-tests`** (non-blocking): runs the XCUITest suite and always uploads its results.
   It is informational only and is **not** counted as verified coverage.
+- **`release-build`** (also required): lints `scripts/install-local.sh` with `shellcheck`, runs its
+  `--dry-run`, then uses it to build and install a Release app (ad-hoc signed) twice into a temp
+  folder, and checks `codesign --verify --deep --strict`, the Hardened Runtime, that the app has
+  no sandbox/keychain-group/get-task-allow entitlements and that the build SHA is stamped. On pushes to `main`
+  it uploads the app as the `OtterTwin-<sha>.zip` artifact (14 days).
 - **`record-snapshots`**: records snapshot baselines on the CI runner. Triggered manually
   (*Run workflow* with "record snapshots" checked → artifact only) or by pushing a branch named
   `ci/record-snapshots/<name>` (the job commits the recorded images back to that branch only).
   Baselines never reach `main` except through a dedicated PR with before/after images.
 
-Not covered by CI: real SMB/NAS transfers (need a real server), App Sandbox behaviour (the
-`ui-tests` job runs an ad-hoc signed app without the sandbox entitlements), and anything that needs
-the owner's machine. These are validated manually through the gate issues.
+Not covered by CI: real SMB/NAS transfers (need a real server), the macOS privacy prompts and
+Keychain access of the installed app, and anything that needs the owner's machine. These are validated manually through the gate issues.

@@ -1,7 +1,9 @@
 import SwiftUI
-import Security
+import os
 
 struct SMBConnectView: View {
+    private static let logger = Logger(subsystem: "OtterTwin", category: "SMBConnectView")
+
     @State private var host = ""
     @State private var share = ""
     @State private var username = ""
@@ -9,6 +11,7 @@ struct SMBConnectView: View {
     @State private var isConnecting = false
     @State private var errorMessage: String?
 
+    var credentialStore: any CredentialStore = KeychainCredentialStore()
     var onConnect: (SMBProvider) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -66,7 +69,7 @@ struct SMBConnectView: View {
         isConnecting = true
         errorMessage = nil
 
-        let info = ConnectionInfo(host: normalizedHost, share: normalizedShare, username: normalizedUsername)
+        let info = normalizedConnection
         guard info.smbURL != nil else {
             errorMessage = "Host and share may contain only letters, numbers, dots, underscores, and hyphens."
             isConnecting = false
@@ -99,45 +102,29 @@ struct SMBConnectView: View {
         ConnectionInfo.isValidSMBComponent(normalizedShare)
     }
 
-    private func keychainAccount() -> String {
-        "\(normalizedUsername)@\(normalizedHost)/\(normalizedShare)"
+    private var normalizedConnection: ConnectionInfo {
+        ConnectionInfo(host: normalizedHost, share: normalizedShare, username: normalizedUsername)
     }
 
     private func saveCredentials() {
-        let account = keychainAccount()
-        let data = password.data(using: .utf8)!
-
-        let lookupQuery: [CFString: Any] = [
-            kSecClass: kSecClassInternetPassword,
-            kSecAttrServer: normalizedHost,
-            kSecAttrAccount: account
-        ]
-        let addQuery: [CFString: Any] = [
-            kSecClass: kSecClassInternetPassword,
-            kSecAttrServer: normalizedHost,
-            kSecAttrAccount: account,
-            kSecAttrAccessible: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            kSecValueData: data
-        ]
-        SecItemDelete(lookupQuery as CFDictionary)
-        SecItemAdd(addQuery as CFDictionary, nil)
+        do {
+            try credentialStore.savePassword(password, for: normalizedConnection)
+        } catch {
+            // The connection already succeeded; only remembering the password failed.
+            // Logged without host/user/password details.
+            Self.logger.error("Could not save SMB password: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func loadSavedCredentials() {
         guard !normalizedHost.isEmpty, !normalizedShare.isEmpty, !normalizedUsername.isEmpty else { return }
-        let account = keychainAccount()
-        let query: [CFString: Any] = [
-            kSecClass: kSecClassInternetPassword,
-            kSecAttrServer: normalizedHost,
-            kSecAttrAccount: account,
-            kSecReturnData: true,
-            kSecMatchLimit: kSecMatchLimitOne
-        ]
-        var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data,
-           let pwd = String(data: data, encoding: .utf8) {
-            password = pwd
+        do {
+            if let saved = try credentialStore.loadPassword(for: normalizedConnection) {
+                password = saved
+            }
+        } catch {
+            // Not a data path: the user can still type the password.
+            Self.logger.error("Could not load SMB password: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

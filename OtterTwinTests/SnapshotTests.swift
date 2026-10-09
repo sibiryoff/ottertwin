@@ -99,18 +99,21 @@ final class SnapshotTests: XCTestCase {
 
     func testSettingsViewDefaults() {
         let settings = SettingsService()
-        let view = SettingsView().environment(settings)
-        assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 420, height: 320)))
+        let view = SettingsView(buildInfo: fixedBuildInfo).environment(settings)
+        assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 420, height: 400)))
     }
 
     func testSettingsViewChecksumDisabled() {
         let settings = SettingsService()
         settings.setChecksumEnabled(false, userConfirmedDisable: true)
-        let view = SettingsView().environment(settings)
-        assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 420, height: 320)))
+        let view = SettingsView(buildInfo: fixedBuildInfo).environment(settings)
+        assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 420, height: 400)))
     }
 
     // MARK: - Helpers
+
+    /// Fixed so the "About this build" row does not change with every commit.
+    private let fixedBuildInfo = BuildInfo(gitSHA: "1a2b3c4", buildDate: "2026-10-08 12:00 UTC")
 
     private func makeOperation(kind: OperationKind = .copy) -> FileOperation {
         FileOperation(
