@@ -36,10 +36,10 @@ final class FileOperationCancellationTests: XCTestCase {
 
     // MARK: - Helpers
 
-    private func makeService(checksumEnabled: Bool = true) -> FileOperationService {
+    private func makeService(checksumEnabled: Bool = true, chunkSize: Int = FileOperationCancellationTests.chunkSize) -> FileOperationService {
         let settings = SettingsService()
         settings.setChecksumEnabled(checksumEnabled, userConfirmedDisable: !checksumEnabled)
-        settings.setChunkSizeBytes(Self.chunkSize)
+        settings.setChunkSizeBytes(chunkSize)
         return FileOperationService(settings: settings)
     }
 
@@ -60,6 +60,13 @@ final class FileOperationCancellationTests: XCTestCase {
 
         var didVerify: Bool { states.contains { if case .verifying = $0 { return true } else { return false } } }
         var didComplete: Bool { states.contains { if case .complete = $0 { return true } else { return false } } }
+    }
+
+    final class FlagBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        var isSet: Bool { lock.withLock { value } }
+        func set() { lock.withLock { value = true } }
     }
 
     /// Starts a copy (or move) in its own task; the task's value is the error it
@@ -255,14 +262,14 @@ final class FileOperationCancellationTests: XCTestCase {
         assertTree(source, matches: before, "source unchanged")
     }
 
-    func testCancelRightBeforeCrossVolumeMoveDeletesTheSourceKeepsTheSource() async throws {
+    func testCancelAtTheEndOfCrossVolumeMoveVerificationKeepsTheSource() async throws {
         let volume = try makeScratchVolume(.apfs)
         let tree = try makeFixture()
         let source = tree.url(FixtureTree.Path.multiChunk)
         let destination = volume.mountPoint.appendingPathComponent("moved.bin")
         let before = try TreeSnapshot.capture(source)
         // Pause at the end-of-file read of verification: every byte of the copy
-        // has been verified, the source delete is the next step.
+        // has been read back; the cancel is caught by the verification itself.
         let chunks = Int((try size(source) + Int64(Self.chunkSize) - 1) / Int64(Self.chunkSize))
         let beforeSourceDelete = provider.pauseRead(of: destination, beforeChunk: chunks)
 
@@ -281,6 +288,120 @@ final class FileOperationCancellationTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: destination.path), "the copy is removed: a cancelled move changes nothing")
         XCTAssertEqual(try partialFiles(in: volume.mountPoint), [])
         assertTree(source, matches: before, "source unchanged")
+    }
+
+    /// The move's own check between "copy finished" and "delete source". With
+    /// checksums on, verification re-checks cancellation after its last read, so
+    /// this check is only reachable deterministically when nothing runs between
+    /// finalizing the copy and the delete: a cross-volume move with checksums off.
+    /// The harness cancels the task right after the copy was moved into place.
+    func testCancelAfterCrossVolumeCopyIsFinalizedNeverDeletesTheSource() async throws {
+        let volume = try makeScratchVolume(.apfs)
+        let tree = try makeFixture()
+        let source = tree.url(FixtureTree.Path.multiChunk)
+        let destination = volume.mountPoint.appendingPathComponent("moved.bin")
+        let before = try TreeSnapshot.capture(source)
+        let finalized = FlagBox()
+        provider.finalizeHooks = [destination: {
+            finalized.set()
+            withUnsafeCurrentTask { $0?.cancel() }
+        }]
+
+        let (operation, log) = start(.move, source, to: destination, service: makeService(checksumEnabled: false))
+        let error = await operation.value
+
+        XCTAssertTrue(finalized.isSet, "the copy was complete and moved into place before the cancel")
+        assertCancelled(error)
+        XCTAssertFalse(log.didComplete)
+        XCTAssertFalse(provider.deleteCalls.contains(source), "source never deleted")
+        XCTAssertEqual(provider.deleteCalls, [destination], "the finished copy is removed: a cancelled move changes nothing")
+        XCTAssertFalse(fm.fileExists(atPath: destination.path))
+        XCTAssertEqual(try partialFiles(in: volume.mountPoint), [])
+        assertTree(source, matches: before, "source unchanged")
+    }
+
+    func testCancelAfterSameVolumeRenameCompletesTheMoveWithChecksumSkipped() async throws {
+        let tree = try makeFixture()
+        let source = tree.url(FixtureTree.Path.multiChunk)
+        let destination = output.appendingPathComponent("moved.bin")
+        let before = try TreeSnapshot.capture(source)
+        // The post-rename sanity hash reads the destination: pause in the middle of it.
+        let duringPostRenameHash = provider.pauseRead(of: destination, beforeChunk: 1)
+
+        let (operation, log) = start(.move, source, to: destination)
+        let reached = await duringPostRenameHash.waitUntilReached()
+        XCTAssertTrue(reached)
+        XCTAssertEqual(provider.moveCalls.count, 1, "the rename has happened")
+        operation.cancel()
+        duringPostRenameHash.release()
+        let error = await operation.value
+
+        // The rename cannot be undone safely, so the move is reported as done,
+        // honestly marked as not verified.
+        XCTAssertNil(error)
+        guard case .complete(.skipped)? = log.states.last else {
+            return XCTFail("expected .complete(.skipped), got \(String(describing: log.states.last))")
+        }
+        XCTAssertFalse(fm.fileExists(atPath: source.path), "source path is gone")
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path), ["moved.bin"], "exactly one file, at the destination")
+        assertTree(destination, matches: before, comparator: TreeComparator(checks: .data), "moved file intact")
+        XCTAssertTrue(provider.deleteCalls.isEmpty)
+    }
+
+    // MARK: - Real LocalProvider: a cancelled task can end its stream silently
+
+    /// `LocalProvider.readChunks` is an `AsyncThrowingStream`: for a cancelled
+    /// consumer it may simply end (no error). These tests cancel the operation's
+    /// own task from its first progress callback and prove that such an ending is
+    /// never taken for end of file (copy) or for a completed verification.
+    private func cancelOnFirst(_ phase: String, checksum: Bool = true) async throws -> (Error?, StateLog, URL) {
+        let source = tempDir.appendingPathComponent("source.bin")
+        try FixtureTree.content(for: "local", size: 16 * 4096 + 5, seed: 3).write(to: source)
+        let destination = output.appendingPathComponent("copy.bin")
+        let service = makeService(checksumEnabled: checksum, chunkSize: 4096)
+        let log = StateLog()
+        let task = Task { () -> Error? in
+            do {
+                try await service.copy(source: source, destination: destination, provider: LocalProvider(), onState: { state in
+                    log.append(state)
+                    let matches: Bool
+                    switch state {
+                    case .copying: matches = phase == "copying"
+                    case .verifying: matches = phase == "verifying"
+                    default: matches = false
+                    }
+                    // The callback runs in the operation's own task.
+                    if matches { withUnsafeCurrentTask { $0?.cancel() } }
+                })
+                return nil
+            } catch {
+                return error
+            }
+        }
+        return (await task.value, log, source)
+    }
+
+    func testLocalProviderCancelDuringCopyIsNeverFinalized() async throws {
+        let (error, log, _) = try await cancelOnFirst("copying")
+        assertCancelled(error)
+        XCTAssertFalse(log.didVerify)
+        XCTAssertFalse(log.didComplete)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path), [], "no destination and no partial file left")
+    }
+
+    func testLocalProviderCancelDuringCopyWithChecksumOffIsNeverFinalized() async throws {
+        let (error, log, _) = try await cancelOnFirst("copying", checksum: false)
+        assertCancelled(error)
+        XCTAssertFalse(log.didComplete)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path), [], "no destination and no partial file left")
+    }
+
+    func testLocalProviderCancelDuringVerificationIsNeverVerified() async throws {
+        let (error, log, _) = try await cancelOnFirst("verifying")
+        assertCancelled(error)
+        XCTAssertTrue(log.didVerify)
+        XCTAssertFalse(log.didComplete)
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path), [], "unverified destination removed")
     }
 
     // MARK: - Finalize on file systems without RENAME_EXCL support

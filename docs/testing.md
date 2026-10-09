@@ -76,6 +76,7 @@ A `VFSProvider` that does real work through `LocalProvider` and injects faults b
 | `closeFaults[url]` | `close()` throws before finalizing; the data stays in the writer's temporary file until `abort()` |
 | `deleteFaults[url]`, `moveFaults[source]`, `trashFaults[url]` | the call throws and changes nothing |
 | `pauseRead(of: url, beforeChunk: k)` | returns a `PausePoint`; the read stops right before chunk `k` |
+| `finalizeHooks[url] = { … }` | runs synchronously in the writing task right after a writer for `url` moved its file into place (e.g. to cancel that task with `withUnsafeCurrentTask`) |
 
 Faults fire at the same byte for any chunk size, every time. Reads are pull-based: a chunk is
 read only when the consumer asks for it. So at a pause point before chunk `k` of the source, the

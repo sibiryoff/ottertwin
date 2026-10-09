@@ -108,6 +108,8 @@ struct MainView: View {
                     onCancel: { operations.cancel() },
                     onDismiss: { operations.dismiss() }
                 )
+                // Never hide the sheet while a file operation is still running.
+                .interactiveDismissDisabled(operations.isRunning)
             }
         }
         .onKeyPress(.tab) {

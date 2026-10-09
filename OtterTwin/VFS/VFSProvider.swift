@@ -68,15 +68,24 @@ class ChunkedWriter {
     private var isFinalized = false
 
     init(url: URL) throws {
-        scopedAccess = try? ScopedAccess(url: url.deletingLastPathComponent())
+        let access = try? ScopedAccess(url: url.deletingLastPathComponent())
+        scopedAccess = access
         destinationURL = url
         temporaryURL = Self.makeTemporaryURL(for: url)
+        // `deinit` does not run when `init` throws: stop the scoped access here.
         // Fail before any data is copied when the destination already exists
         // (reported as a conflict). `close()` re-checks atomically.
         var info = stat()
-        if lstat(url.path, &info) == 0 { throw POSIXError(.EEXIST) }
+        if lstat(url.path, &info) == 0 {
+            access?.stop()
+            throw POSIXError(.EEXIST)
+        }
         let fd = open(temporaryURL.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, S_IRUSR | S_IWUSR)
-        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        guard fd >= 0 else {
+            let code = errno
+            access?.stop()
+            throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
+        }
         handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
     }
 
