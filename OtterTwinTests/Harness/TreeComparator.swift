@@ -205,9 +205,10 @@ extension XCTestCase {
         file: StaticString = #filePath, line: UInt = #line
     ) {
         guard !differences.isEmpty else { return }
-        let listed = differences.prefix(50).map { "  \($0)" }.joined(separator: "\n")
-        let more = differences.count > 50 ? "\n  … and \(differences.count - 50) more" : ""
-        XCTFail("\(message.isEmpty ? "" : message + ": ")\(differences.count) tree difference(s):\n\(listed)\(more)",
+        // One line, so CI annotations (first line only) show the differences too.
+        let listed = differences.prefix(50).map(\.description).joined(separator: "; ")
+        let more = differences.count > 50 ? "; … and \(differences.count - 50) more" : ""
+        XCTFail("\(message.isEmpty ? "" : message + ": ")\(differences.count) tree difference(s): \(listed)\(more)",
                 file: file, line: line)
     }
 

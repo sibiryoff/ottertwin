@@ -117,7 +117,7 @@ Known gaps are wrapped in `XCTExpectFailure("#<issue>: …")`:
 | Gap | Issue |
 |---|---|
 | cancelling does not stop the running copy | #6 |
-| folder copy skips hidden entries and does not handle symlinks; folders cannot be moved across volumes | #9 |
+| folder copy skips hidden entries, does not handle symlinks and rewrites NFC file names to NFD; folders cannot be moved across volumes | #9 |
 | a failed overwrite destroys the original destination | #27 |
 | a cross-volume move with checksums off does not verify; a failed source delete is an error, not a partial success | #28 |
 | mtime, permissions and xattrs are not preserved | #30 |

@@ -308,10 +308,17 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         XCTAssertNil(outcome.error)
         try assertUnchanged(before)
         let copied = try snapshot(destination)
-        // Guarantee today: every visible file and folder, byte-exact, including Unicode/long names.
-        assertNoDifferences(TreeComparator(checks: .data, excluding: TreeComparator.isHidden).compare(expected: before, actual: copied))
+        let nfcName = FixtureTree.Path.nfcName
+        // Guarantee today: every visible file and folder, byte-exact, including NFD, emoji and long names.
+        assertNoDifferences(TreeComparator(checks: .data, excluding: { TreeComparator.isHidden($0) || $0 == nfcName })
+            .compare(expected: before, actual: copied))
         XCTExpectFailure("#9: copyDirectory skips hidden files and folders") {
-            assertNoDifferences(TreeComparator(checks: [.presence]).compare(expected: before, actual: copied))
+            assertNoDifferences(TreeComparator(checks: [.presence], excluding: { !TreeComparator.isHidden($0) })
+                .compare(expected: before, actual: copied))
+        }
+        XCTExpectFailure("#9: copyDirectory rewrites an NFC file name to NFD (Foundation path conversion)") {
+            assertNoDifferences(TreeComparator(checks: .data, excluding: { !$0.hasPrefix("unicode/nfc/") })
+                .compare(expected: before, actual: copied))
         }
         XCTExpectFailure("#30: folder copies do not preserve mtimes, permissions or xattrs") {
             assertNoDifferences(TreeComparator(checks: .metadata, excluding: TreeComparator.isHidden).compare(expected: before, actual: copied))
