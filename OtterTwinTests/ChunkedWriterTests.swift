@@ -38,7 +38,7 @@ final class ChunkedWriterTests: XCTestCase {
         for writer in [first, second] {
             XCTAssertEqual(writer.destinationURL, destination)
             XCTAssertEqual(writer.temporaryURL.deletingLastPathComponent(), tempDir, "same folder as the destination")
-            XCTAssertTrue(ChunkedWriter.isTemporaryFileName(writer.temporaryURL.lastPathComponent))
+            XCTAssertTrue(ChunkedWriter.isDiscardablePartialFileName(writer.temporaryURL.lastPathComponent))
             XCTAssertEqual(try permissions(writer.temporaryURL), 0o600)
         }
 
@@ -85,12 +85,31 @@ final class ChunkedWriterTests: XCTestCase {
     }
 
     func testTemporaryFileNameRecognition() {
-        XCTAssertTrue(ChunkedWriter.isTemporaryFileName(".a.bin.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.part"))
-        XCTAssertFalse(ChunkedWriter.isTemporaryFileName("a.bin"))
-        XCTAssertFalse(ChunkedWriter.isTemporaryFileName(".a.bin.part"))
-        XCTAssertTrue(ChunkedWriter.isTemporaryFileName(".a.bin.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.old"), "#27 parked original")
-        XCTAssertFalse(ChunkedWriter.isTemporaryFileName(".a.bin.old"))
-        XCTAssertTrue(ChunkedWriter.isTemporaryFileName(ChunkedWriter.backupURL(for: URL(fileURLWithPath: "/x/a.bin")).lastPathComponent))
+        let part = ".a.bin.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.part"
+        let old = ".a.bin.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.old"
+        XCTAssertTrue(ChunkedWriter.isDiscardablePartialFileName(part))
+        XCTAssertFalse(ChunkedWriter.isDiscardablePartialFileName("a.bin"))
+        XCTAssertFalse(ChunkedWriter.isDiscardablePartialFileName(".a.bin.part"))
+        XCTAssertTrue(ChunkedWriter.isParkedOriginalFileName(old), "#27 parked original")
+        XCTAssertFalse(ChunkedWriter.isParkedOriginalFileName(".a.bin.old"))
+        XCTAssertFalse(ChunkedWriter.isParkedOriginalFileName(part))
+        XCTAssertFalse(ChunkedWriter.isParkedOriginalFileName("a.bin"))
+    }
+
+    /// #27: a parked original (`.old`) can be the user's only copy of the
+    /// original destination, so the discardable-partial predicate, the one a
+    /// cleanup of stale partial files would use, must never match it.
+    func testPartialPredicateNeverMatchesAParkedOriginal() {
+        let destination = URL(fileURLWithPath: "/x/a.bin")
+        for _ in 0..<20 {
+            let parked = ChunkedWriter.backupURL(for: destination).lastPathComponent
+            XCTAssertTrue(ChunkedWriter.isParkedOriginalFileName(parked), parked)
+            XCTAssertFalse(ChunkedWriter.isDiscardablePartialFileName(parked), parked)
+        }
+        for name in [".a.bin.ottertwin-X.old", ".a.part.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.old",
+                     "." + String(repeating: "n", count: 100) + ".ottertwin-0F1C1D7E-1111-2222-3333-444455556666.old"] {
+            XCTAssertFalse(ChunkedWriter.isDiscardablePartialFileName(name), name)
+        }
     }
 
     /// #27: a replacing writer keeps the existing item until `commit()`, which

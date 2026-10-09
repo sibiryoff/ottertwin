@@ -283,7 +283,9 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: destination.path), "original destination must survive")
         assertTree(destination, matches: original, comparator: TreeComparator(checks: .data),
                    "original destination must survive byte-identical")
-        XCTAssertEqual(try partialFiles(in: tempDir), [], "no partial or .old file left")
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: tempDir.path).filter {
+            ChunkedWriter.isDiscardablePartialFileName($0) || ChunkedWriter.isParkedOriginalFileName($0)
+        }, [], "no partial or .old file left")
     }
 
     // MARK: - Pause points: exactly during copy / exactly during verification
@@ -364,7 +366,7 @@ final class CopyMoveCharacterizationTests: XCTestCase {
 
     /// `ChunkedWriter` temporary (partial) files in `directory`.
     private func partialFiles(in directory: URL) throws -> [String] {
-        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isTemporaryFileName)
+        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isDiscardablePartialFileName)
     }
 
     /// Polls `condition` until it holds; false after `timeout`.

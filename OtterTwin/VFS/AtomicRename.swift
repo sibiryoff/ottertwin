@@ -66,16 +66,23 @@ struct AtomicRename {
     /// of a move that reported success. Pass false there, so the original only
     /// ever waits under the hidden `backup` name.
     func replace(_ destination: URL, with source: URL, backup: URL, swapping: Bool = true) throws {
-        if Self.isSameFile(source, destination) {
-            // A name change of one file (e.g. only its case, on a case-insensitive
-            // volume): there is nothing to replace, and removing the "original"
-            // would remove the file itself.
+        // The very same path: nothing to do (removing the "original" would
+        // remove the file itself).
+        // Compared as bytes: Swift `String` equality would also equate NFC/NFD spellings.
+        if Array(source.standardizedFileURL.path.utf8) == Array(destination.standardizedFileURL.path.utf8) { return }
+        if Self.isCaseOnlyRename(of: source, to: destination) {
+            // Only the case of one file's name changes, on a case-insensitive
+            // volume: there is nothing to replace, and removing the "original"
+            // would remove the file itself. (Two hard links to one file under
+            // different names are not this case: they take the normal path.)
             let result = renamex(source.path, destination.path, 0)
             guard result == 0 else { throw Self.error(result) }
             return
         }
 
-        if swapping {
+        // Two hard links to one file: swapping them would be meaningless, so
+        // take the path that parks the destination name and moves the source in.
+        if swapping, !Self.isSameFile(source, destination) {
             let swapped = renamex(source.path, destination.path, UInt32(RENAME_SWAP))
             if swapped == 0 {
                 // The new file is in place; the original now has `source`'s (hidden) name.
@@ -143,6 +150,18 @@ struct AtomicRename {
     private static func exists(_ url: URL) -> Bool {
         var info = stat()
         return lstat(url.path, &info) == 0
+    }
+
+    /// Same folder, names that differ only in case (or Unicode normalization),
+    /// and both names resolve to the same file (i.e. the volume ignores that
+    /// difference).
+    private static func isCaseOnlyRename(of source: URL, to destination: URL) -> Bool {
+        let sourceName = source.lastPathComponent, destinationName = destination.lastPathComponent
+        guard source.deletingLastPathComponent().standardizedFileURL.path
+                == destination.deletingLastPathComponent().standardizedFileURL.path,
+              Array(sourceName.utf8) != Array(destinationName.utf8),  // bytes: also NFC vs NFD
+              sourceName.caseInsensitiveCompare(destinationName) == .orderedSame else { return false }
+        return isSameFile(source, destination)
     }
 
     private static func isSameFile(_ a: URL, _ b: URL) -> Bool {

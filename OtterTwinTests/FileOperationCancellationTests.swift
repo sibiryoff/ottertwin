@@ -100,7 +100,7 @@ final class FileOperationCancellationTests: XCTestCase {
 
     /// Names of `ChunkedWriter` temporary files in `directory`.
     private func partialFiles(in directory: URL) throws -> [String] {
-        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isTemporaryFileName)
+        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isDiscardablePartialFileName)
     }
 
     private func size(_ url: URL) throws -> Int64 { try HarnessPOSIX.lstat(url.path).st_size }

@@ -174,11 +174,20 @@ class ChunkedWriter {
 
     // MARK: Temporary names
 
-    /// True for names of temporary files made by `ChunkedWriter`: partial
-    /// copies (`.part`) and originals parked by the replace fallback (`.old`).
-    static func isTemporaryFileName(_ name: String) -> Bool {
-        name.hasPrefix(".") && name.contains(temporaryMarker)
-            && (name.hasSuffix(temporarySuffix) || name.hasSuffix(backupSuffix))
+    /// True for partial copies made by `ChunkedWriter`
+    /// (`.<name>.ottertwin-<uuid>.part`). They hold no data that exists
+    /// nowhere else: the source still has it, so they may be discarded.
+    static func isDiscardablePartialFileName(_ name: String) -> Bool {
+        name.hasPrefix(".") && name.contains(temporaryMarker) && name.hasSuffix(temporarySuffix)
+    }
+
+    /// True for originals parked by the replace fallback (#27,
+    /// `.<name>.ottertwin-<uuid>.old`). Normally removed right after the
+    /// replace; one that remains (e.g. after a failed restore) can be the
+    /// user's only copy of the original destination and must NEVER be deleted
+    /// automatically.
+    static func isParkedOriginalFileName(_ name: String) -> Bool {
+        name.hasPrefix(".") && name.contains(temporaryMarker) && name.hasSuffix(backupSuffix)
     }
 
     /// A hidden, operation-unique name for `url`'s replace fallback (#27):

@@ -446,7 +446,7 @@ actor FileOperationService {
         destination: URL,
         resolution: ConflictResolution
     ) -> Target? {
-        guard FileManager.default.fileExists(atPath: destination.path) else {
+        guard Self.itemExists(at: destination) else {
             return Target(url: destination, replacesExisting: false)
         }
         switch resolution {
@@ -466,7 +466,7 @@ actor FileOperationService {
             let name = ext.isEmpty ? "\(stem)-\(counter)" : "\(stem)-\(counter).\(ext)"
             candidate = dir.appendingPathComponent(name)
             counter += 1
-        } while FileManager.default.fileExists(atPath: candidate.path)
+        } while Self.itemExists(at: candidate)
         return candidate
     }
 
@@ -511,6 +511,13 @@ actor FileOperationService {
 
     private static func volumeIdentifier(for url: URL) -> NSNumber? {
         try? FileManager.default.attributesOfItem(atPath: url.path)[.systemNumber] as? NSNumber
+    }
+
+    /// Whether anything is at `url`, without following symlinks: a dangling
+    /// symlink counts as an existing item.
+    private static func itemExists(at url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0
     }
 
     private static func isFileExistsError(_ error: Error) -> Bool {

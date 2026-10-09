@@ -143,6 +143,50 @@ final class AtomicRenameTests: XCTestCase {
         }
     }
 
+    /// Two hard links to one file under different names are not a case-only
+    /// rename: replacing one with the other moves the source name away, as
+    /// for any other replace (a plain `rename` would be a no-op that leaves
+    /// the source in place).
+    func testReplacingAHardLinkWithAnotherLinkToTheSameFileMovesIt() throws {
+        let cases: [(String, AtomicRename, Bool)] = [
+            ("native, swap", .system, true),
+            ("native, no swap", .system, false),
+            ("fallback", .withoutRenameFlags(), false),
+        ]
+        for (name, rename, swapping) in cases {
+            let folder = tempDir.appendingPathComponent(name, isDirectory: true)
+            try HarnessPOSIX.makeDirectory(folder.path)
+            let source = folder.appendingPathComponent("a.bin")
+            let destination = folder.appendingPathComponent("b.bin")
+            try HarnessPOSIX.writeFile(source.path, data: original)
+            XCTAssertEqual(link(source.path, destination.path), 0, "\(name): errno \(errno)")
+
+            try rename.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination), swapping: swapping)
+
+            XCTAssertFalse(fm.fileExists(atPath: source.path), "\(name): the source name is gone")
+            XCTAssertEqual(try Data(contentsOf: destination), original, name)
+            XCTAssertEqual(try contents(of: folder), ["b.bin"], name)
+        }
+    }
+
+    func testCaseOnlyRenameKeepsTheFile() throws {
+        for (name, rename) in Self.variants {
+            let folder = tempDir.appendingPathComponent(name, isDirectory: true)
+            try HarnessPOSIX.makeDirectory(folder.path)
+            let source = folder.appendingPathComponent("file.bin")
+            try HarnessPOSIX.writeFile(source.path, data: original)
+            let destination = folder.appendingPathComponent("FILE.bin")
+            guard fm.fileExists(atPath: destination.path) else {
+                throw XCTSkip("the temp volume is case-sensitive")
+            }
+
+            try rename.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination), swapping: false)
+
+            XCTAssertEqual(try contents(of: folder), ["FILE.bin"], name)
+            XCTAssertEqual(try Data(contentsOf: destination), original, name)
+        }
+    }
+
     // MARK: - Same-volume move replace
 
     /// A move never leaves the old destination at the (user-visible) source
@@ -167,7 +211,7 @@ final class AtomicRenameTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: destination), replacement)
         let leftovers = try contents(of: folder).filter { $0 != "target" }
         XCTAssertEqual(leftovers.count, 1, "\(leftovers)")
-        XCTAssertTrue(leftovers.allSatisfy(ChunkedWriter.isTemporaryFileName), "only a hidden .old leftover: \(leftovers)")
+        XCTAssertTrue(leftovers.allSatisfy(ChunkedWriter.isParkedOriginalFileName), "only a hidden .old leftover: \(leftovers)")
     }
 
     /// Makes leftovers of the test above removable by `tearDown`.

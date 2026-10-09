@@ -95,12 +95,17 @@ pause.release()
 Writes go through `ChunkedWriter` (#6): the data is written to a hidden temporary file in the
 destination folder, `.<name>.ottertwin-<uuid>.part` (`writer.temporaryURL`). Since #27 the copy is
 verified in that file (`finishWriting()`, verify, then `commit()`), and it appears under the final
-name only when `commit()` succeeds: `RENAME_EXCL` for a new destination, `RENAME_SWAP` for
-`.overwrite`, or the fallback that parks the original as `.<name>.ottertwin-<uuid>.old` (see
-`AtomicRename`). Faults are still keyed by the final URL, and reads of a writer's temporary file
-count as reads of its final URL (read faults, pause points, `readCalls`), so a pause before chunk 0
-of the destination is still exactly the start of verification. To find partial or parked files,
-filter a directory listing with `ChunkedWriter.isTemporaryFileName`.
+name only when `commit()` succeeds: `RENAME_EXCL` for a new destination, `RENAME_SWAP` for a copy
+with `.overwrite`, or (without swap support) the fallback that parks the original as
+`.<name>.ottertwin-<uuid>.old` and restores it on failure (see `AtomicRename`). Same-volume moves with
+`.overwrite` (`replaceItem`) never swap: they always park the original as `.old`, so the old
+destination can never land at the user-visible source path. Faults are still keyed by the final URL,
+and reads of a writer's temporary file count as reads of its final URL (read faults, pause points,
+`readCalls`), so a pause before chunk 0 of the destination is still exactly the start of
+verification. To find partial files, filter a directory listing with
+`ChunkedWriter.isDiscardablePartialFileName`; parked originals match
+`ChunkedWriter.isParkedOriginalFileName`. A `.old` that remains (e.g. after a failed restore) can be
+the user's only copy of the original and must never be deleted automatically.
 
 "Trash" moves items into a folder you pass to `init(fakeTrash:)`, never into `~/.Trash`. The
 provider also records calls (`readCalls`, `writerCalls`, `deleteCalls`, `moveCalls`,

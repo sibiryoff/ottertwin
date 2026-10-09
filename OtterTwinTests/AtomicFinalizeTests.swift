@@ -41,7 +41,7 @@ final class AtomicFinalizeTests: XCTestCase {
         case sameVolumeWithoutRenameFlags
         /// Another APFS volume.
         case crossVolumeAPFS
-        /// A real ExFAT volume: no `RENAME_SWAP`, so the fallback (see `testExFATAndFATHaveNoRenameSwap`).
+        /// A real ExFAT volume: no `RENAME_SWAP`, so the fallback (see `AtomicRenameTests.testExFATHasNoRenameSwap`).
         case crossVolumeExFAT
 
         var usesFallback: Bool { self == .sameVolumeWithoutRenameFlags || self == .crossVolumeExFAT }
@@ -411,6 +411,37 @@ final class AtomicFinalizeTests: XCTestCase {
         XCTAssertTrue(provider.deleteCalls.isEmpty, "nothing deleted: \(provider.deleteCalls)")
         assertTreesEqual(expected: source, actual: destination, comparator: TreeComparator(checks: .data))
         assertContents(of: folder, are: ["existing.bin"], "no partial or .old file left")
+    }
+
+    // MARK: - Dangling symlink at the destination
+
+    /// A dangling symlink at the destination is an existing item (`lstat`):
+    /// `.skip` keeps it, `.rename` picks another name, `.overwrite` replaces
+    /// the link itself (never its missing target).
+    func testDanglingSymlinkAtTheDestinationIsAnExistingItem() async throws {
+        let tree = try makeFixture()
+        let source = tree.url(FixtureTree.Path.chunkPlusOne)
+        let folder = try prepare(.sameVolume)
+        let destination = folder.appendingPathComponent("link.bin")
+        let missingTarget = folder.appendingPathComponent("missing-target").path
+
+        try HarnessPOSIX.symlink(missingTarget, at: destination.path)
+        let skipped = await run(.copy, source, to: destination, conflict: .skip)
+        XCTAssertNil(skipped.error)
+        if case .skipped? = skipped.result {} else { XCTFail("expected .skipped, got \(String(describing: skipped.result))") }
+        XCTAssertEqual(try HarnessPOSIX.readLink(destination.path), Array(missingTarget.utf8), "link kept")
+
+        let renamed = await run(.copy, source, to: destination, conflict: .rename)
+        XCTAssertNil(renamed.error)
+        assertTreesEqual(expected: source, actual: folder.appendingPathComponent("link-2.bin"),
+                         comparator: TreeComparator(checks: .data))
+        XCTAssertEqual(try HarnessPOSIX.readLink(destination.path), Array(missingTarget.utf8), "link kept")
+
+        let replaced = await run(.copy, source, to: destination, conflict: .overwrite)
+        XCTAssertNil(replaced.error)
+        assertTreesEqual(expected: source, actual: destination, comparator: TreeComparator(checks: .data))
+        XCTAssertFalse(fm.fileExists(atPath: missingTarget), "the link's target was never created")
+        assertContents(of: folder, are: ["link.bin", "link-2.bin"], "no partial or .old file left")
     }
 
     // MARK: - Copy onto itself
