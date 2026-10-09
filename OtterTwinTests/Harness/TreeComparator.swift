@@ -38,11 +38,13 @@ struct TreeEntry {
 struct TreeSnapshot {
     let root: URL
     let entries: [[UInt8]: TreeEntry]
+    /// Whether regular files were hashed (required for the `.content` check).
+    let hashedContents: Bool
 
     static func capture(_ root: URL, hashContents: Bool = true) throws -> TreeSnapshot {
         var entries: [[UInt8]: TreeEntry] = [:]
         try walk(absolute: Array(root.path.utf8), relative: [], hashContents: hashContents, into: &entries)
-        return TreeSnapshot(root: root, entries: entries)
+        return TreeSnapshot(root: root, entries: entries, hashedContents: hashContents)
     }
 
     private static func walk(
@@ -130,13 +132,18 @@ struct TreeComparator {
 
     func compare(expected: URL, actual: URL) throws -> [TreeDifference] {
         let hash = checks.contains(.content)
-        return compare(
+        return try compare(
             expected: try TreeSnapshot.capture(expected, hashContents: hash),
             actual: try TreeSnapshot.capture(actual, hashContents: hash)
         )
     }
 
-    func compare(expected: TreeSnapshot, actual: TreeSnapshot) -> [TreeDifference] {
+    /// Throws when `.content` is checked but a snapshot was captured without hashes,
+    /// so a content check can never pass vacuously.
+    func compare(expected: TreeSnapshot, actual: TreeSnapshot) throws -> [TreeDifference] {
+        if checks.contains(.content), !(expected.hashedContents && actual.hashedContents) {
+            throw HarnessError(description: "TreeComparator: .content is checked but a snapshot has no content hashes")
+        }
         var differences: [TreeDifference] = []
         let keys = Set(expected.entries.keys).union(actual.entries.keys)
             .sorted { $0.lexicographicallyPrecedes($1) }
@@ -232,9 +239,33 @@ extension XCTestCase {
     ) {
         do {
             let snapshot = try TreeSnapshot.capture(actual, hashContents: comparator.checks.contains(.content))
-            assertNoDifferences(comparator.compare(expected: expected, actual: snapshot), message, file: file, line: line)
+            assertNoDifferences(try comparator.compare(expected: expected, actual: snapshot), message, file: file, line: line)
         } catch {
             XCTFail("Tree comparison failed: \(error)", file: file, line: line)
         }
+    }
+
+    /// Compares two snapshots; one failure lists every difference. A harness error
+    /// is reported as "Tree comparison failed", never as a tree difference.
+    func assertSnapshot(
+        _ actual: TreeSnapshot, matches expected: TreeSnapshot, comparator: TreeComparator = TreeComparator(),
+        _ message: String = "", file: StaticString = #filePath, line: UInt = #line
+    ) {
+        do {
+            assertNoDifferences(try comparator.compare(expected: expected, actual: actual), message, file: file, line: line)
+        } catch {
+            XCTFail("Tree comparison failed: \(error)", file: file, line: line)
+        }
+    }
+}
+
+extension XCTExpectedFailure.Options {
+    /// Options whose matcher accepts only tree-difference failures recorded by
+    /// `assertNoDifferences`, so harness errors (e.g. a failing `lstat`) are never
+    /// absorbed by an expected failure.
+    static var treeDifferencesOnly: XCTExpectedFailure.Options {
+        let options = XCTExpectedFailure.Options()
+        options.issueMatcher = { $0.compactDescription.contains("tree difference(s)") }
+        return options
     }
 }

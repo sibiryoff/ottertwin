@@ -218,6 +218,14 @@ final class TreeComparatorTests: XCTestCase {
         }
     }
 
+    func testContentCheckWithoutHashesFailsLoudly() throws {
+        let unhashed = try TreeSnapshot.capture(expected, hashContents: false)
+        let hashed = try TreeSnapshot.capture(actual)
+        XCTAssertThrowsError(try TreeComparator().compare(expected: unhashed, actual: hashed))
+        XCTAssertThrowsError(try TreeComparator(checks: .content).compare(expected: hashed, actual: unhashed))
+        XCTAssertEqual(try TreeComparator(checks: [.presence, .type, .size]).compare(expected: unhashed, actual: hashed), [])
+    }
+
     func testExcludingSkipsPathsOnBothSides() throws {
         try fm.removeItem(atPath: p(actual, ".hidden"))
         try HarnessPOSIX.writeFile(p(actual, ".extra_hidden"), data: Data())

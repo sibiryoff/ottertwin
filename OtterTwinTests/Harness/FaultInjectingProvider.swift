@@ -51,6 +51,7 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     private var _readCalls: [URL] = []
     private var _writerCalls: [URL] = []
     private var _bytesDelivered: [String: Int64] = [:]
+    private var _finishedReads: [String: Int] = [:]
 
     init(fakeTrash: URL, supportsTrash: Bool = true) {
         self.fakeTrash = fakeTrash
@@ -122,6 +123,18 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     var writerCalls: [URL] { locked { _writerCalls } }
     /// Bytes delivered so far by read streams of `url` (all streams combined).
     func bytesDelivered(from url: URL) -> Int64 { locked { _bytesDelivered[Self.key(url)] ?? 0 } }
+    /// Read streams of `url` that ran to their end (EOF, error or cancellation).
+    func finishedReadCount(of url: URL) -> Int { locked { _finishedReads[Self.key(url)] ?? 0 } }
+
+    /// Waits until `count` read streams of `url` have finished. Returns false on timeout.
+    func waitUntilReadsFinished(of url: URL, count: Int = 1, timeout: TimeInterval = 30) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while finishedReadCount(of: url) < count {
+            if Date() >= deadline { return false }
+            try? await Task.sleep(nanoseconds: 5_000_000)  // test polling; the deadline bounds the wait
+        }
+        return true
+    }
 
     // MARK: VFSProvider
 
@@ -134,8 +147,10 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
             _readCalls.append(url)
             return (Self.lookup(_readFaults, url), Self.lookup(_readPauses, url) ?? [:])
         }
-        let state = ReadState(url: url, chunkSize: chunkSize)
         let key = Self.key(url)
+        let state = ReadState(url: url, chunkSize: chunkSize) { [self] in
+            self.locked { self._finishedReads[key, default: 0] += 1 }
+        }
         return AsyncThrowingStream(unfolding: { [self] in
             if let pending = state.pendingError {
                 state.pendingError = nil
@@ -250,13 +265,19 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
         var offset: Int64 = 0
         var chunkIndex = 0
         var pendingError: Error?
+        private let onFinish: () -> Void
         var finished = false {
-            didSet { if finished { closeHandle() } }
+            didSet {
+                guard finished, !oldValue else { return }
+                closeHandle()
+                onFinish()
+            }
         }
 
-        init(url: URL, chunkSize: Int) {
+        init(url: URL, chunkSize: Int, onFinish: @escaping () -> Void) {
             self.url = url
             self.chunkSize = chunkSize
+            self.onFinish = onFinish
         }
 
         /// Same calls as `LocalProvider.readChunks`; nil at end of file.

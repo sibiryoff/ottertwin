@@ -117,12 +117,13 @@ Known gaps are wrapped in `XCTExpectFailure("#<issue>: …")`:
 | Gap | Issue |
 |---|---|
 | cancelling does not stop the running copy | #6 |
-| folder copy skips hidden entries, does not handle symlinks and rewrites NFC file names to NFD; folders cannot be moved across volumes | #9 |
+| folder copy skips hidden entries and does not handle symlinks; folders cannot be moved across volumes | #9 |
+| copy rewrites NFC file names to NFD (single file started like the UI, and folder copy) | #48 |
 | a failed overwrite destroys the original destination | #27 |
 | a cross-volume move with checksums off does not verify; a failed source delete is an error, not a partial success | #28 |
 | mtime, permissions and xattrs are not preserved | #30 |
 
-Expected failures are strict. When a fix makes a block pass, the test fails until the fixing PR
+Each block holds one assertion, so a partial fix shows up. Blocks that compare trees pass `options: .treeDifferencesOnly`, so a harness error (for example, a failing `lstat`) is never counted as the expected failure. Expected failures are strict. When a fix makes a block pass, the test fails until the fixing PR
 removes that `XCTExpectFailure` and keeps the assertion. The gap then becomes a guarantee.
 
 ## What CI verifies vs. what the owner checks at gates

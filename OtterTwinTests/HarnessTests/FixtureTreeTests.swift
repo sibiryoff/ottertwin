@@ -42,7 +42,10 @@ final class FixtureTreeTests: XCTestCase {
         typealias P = FixtureTree.Path
 
         func st(_ relativePath: String) throws -> stat { try HarnessPOSIX.lstat(tree.path(relativePath)) }
-        func isType(_ relativePath: String, _ type: mode_t) throws -> Bool { try st(relativePath).st_mode & S_IFMT == type }
+        func isType(_ relativePath: String, _ type: mode_t) throws -> Bool {
+            let mode = try HarnessPOSIX.lstat(tree.path(relativePath)).st_mode
+            return mode & S_IFMT == type
+        }
 
         // Nested directories, depth ≥ 5, and empty directories.
         XCTAssertGreaterThanOrEqual(P.deepDirectory.split(separator: "/").count, 5)

@@ -100,8 +100,7 @@ final class CopyMoveCharacterizationTests: XCTestCase {
 
     /// The source must be exactly as before the operation (all checks, including mtime).
     private func assertUnchanged(_ before: TreeSnapshot, file: StaticString = #filePath, line: UInt = #line) throws {
-        assertNoDifferences(TreeComparator().compare(expected: before, actual: try snapshot(before.root)),
-                            "source changed", file: file, line: line)
+        assertSnapshot(try snapshot(before.root), matches: before, "source changed", file: file, line: line)
     }
 
     private func dataDifferences(_ expected: URL, _ actual: URL) throws -> [TreeDifference] {
@@ -148,9 +147,52 @@ final class CopyMoveCharacterizationTests: XCTestCase {
             let outcome = await copy(source, to: destination)
             XCTAssertNil(outcome.error, name)
             assertNoDifferences(try dataDifferences(source, destination), name)
-            XCTExpectFailure("#30: copies do not preserve \(name)'s metadata yet") {
+            XCTExpectFailure("#30: copies do not preserve \(name)'s metadata yet", options: .treeDifferencesOnly) {
                 assertTreesEqual(expected: source, actual: destination, comparator: TreeComparator(checks: check), name)
             }
+        }
+    }
+
+    // MARK: - Single-file copy: names as the UI takes them (#48)
+
+    /// Copies the only file in `folder` the way the UI does: the destination name
+    /// is the `FileItem.name` from `provider.listDirectory`.
+    private func copyAsUI(folder: String, of tree: FixtureTree, into output: URL) async throws -> Outcome {
+        let items = try await provider.listDirectory(tree.url(folder))
+        XCTAssertEqual(items.count, 1)
+        let item = try XCTUnwrap(items.first)
+        try fm.createDirectory(at: output, withIntermediateDirectories: true)
+        return await copy(item.id, to: output.appendingPathComponent(item.name))
+    }
+
+    func testSingleFileCopyFromListingKeepsNFDName() async throws {
+        let tree = try makeFixture()
+        let output = tempDir.appendingPathComponent("out-nfd", isDirectory: true)
+
+        let outcome = try await copyAsUI(folder: "unicode/nfd", of: tree, into: output)
+
+        XCTAssertNil(outcome.error)
+        assertTreesEqual(expected: tree.url("unicode/nfd"), actual: output, comparator: TreeComparator(checks: .data))
+    }
+
+    func testSingleFileCopyFromListingKeepsNFCName_knownGap48() async throws {
+        let tree = try makeFixture()
+        let output = tempDir.appendingPathComponent("out-nfc", isDirectory: true)
+
+        let outcome = try await copyAsUI(folder: "unicode/nfc", of: tree, into: output)
+
+        XCTAssertNil(outcome.error)
+        // The bytes arrive whatever the name; only the name's spelling is the gap.
+        let copiedNames = try HarnessPOSIX.directoryEntries(output.path)
+        XCTAssertEqual(copiedNames.count, 1)
+        if let name = copiedNames.first {
+            let copied = URL(fileURLWithPath: output.path + "/" + String(decoding: name, as: UTF8.self))
+            assertTreesEqual(expected: tree.url(FixtureTree.Path.nfcName), actual: copied,
+                             comparator: TreeComparator(checks: [.type, .size, .content]))
+        }
+        XCTExpectFailure("#48: a single-file copy started like the UI rewrites an NFC name to NFD",
+                         options: .treeDifferencesOnly) {
+            assertTreesEqual(expected: tree.url("unicode/nfc"), actual: output, comparator: TreeComparator(checks: .data))
         }
     }
 
@@ -237,6 +279,10 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         XCTAssertNotNil(outcome.error)
         try assertUnchanged(sourceBefore)
         XCTExpectFailure("#27: overwrite deletes the original destination before the new copy is verified") {
+            XCTAssertTrue(fm.fileExists(atPath: destination.path), "original destination must survive")
+        }
+        // Once #27 keeps the original, it must also be byte-identical (a guarantee, not an expectation).
+        if fm.fileExists(atPath: destination.path) {
             assertTree(destination, matches: original, comparator: TreeComparator(checks: .data),
                        "original destination must survive byte-identical")
         }
@@ -290,6 +336,12 @@ final class CopyMoveCharacterizationTests: XCTestCase {
             XCTAssertFalse(continued, "copy kept running after cancel")
         }
         duringVerification.release()
+        if continued {
+            // Let the detached copy finish its verification read (its last I/O)
+            // so it cannot race tearDown's removal of the temp folder.
+            let finished = await provider.waitUntilReadsFinished(of: destination)
+            XCTAssertTrue(finished, "detached copy did not finish")
+        }
     }
 
     // MARK: - Folder copy
@@ -310,18 +362,20 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         let copied = try snapshot(destination)
         let nfcName = FixtureTree.Path.nfcName
         // Guarantee today: every visible file and folder, byte-exact, including NFD, emoji and long names.
-        assertNoDifferences(TreeComparator(checks: .data, excluding: { TreeComparator.isHidden($0) || $0 == nfcName })
-            .compare(expected: before, actual: copied))
-        XCTExpectFailure("#9: copyDirectory skips hidden files and folders") {
-            assertNoDifferences(TreeComparator(checks: [.presence], excluding: { !TreeComparator.isHidden($0) })
-                .compare(expected: before, actual: copied))
+        assertSnapshot(copied, matches: before,
+                       comparator: TreeComparator(checks: .data, excluding: { TreeComparator.isHidden($0) || $0 == nfcName }))
+        XCTExpectFailure("#9: copyDirectory skips hidden files and folders", options: .treeDifferencesOnly) {
+            assertSnapshot(copied, matches: before,
+                           comparator: TreeComparator(checks: [.presence], excluding: { !TreeComparator.isHidden($0) }))
         }
-        XCTExpectFailure("#9: copyDirectory rewrites an NFC file name to NFD (Foundation path conversion)") {
-            assertNoDifferences(TreeComparator(checks: .data, excluding: { !$0.hasPrefix("unicode/nfc/") })
-                .compare(expected: before, actual: copied))
+        XCTExpectFailure("#48: copyDirectory rewrites an NFC file name to NFD", options: .treeDifferencesOnly) {
+            assertSnapshot(copied, matches: before,
+                           comparator: TreeComparator(checks: .data, excluding: { !$0.hasPrefix("unicode/nfc/") }))
         }
-        XCTExpectFailure("#30: folder copies do not preserve mtimes, permissions or xattrs") {
-            assertNoDifferences(TreeComparator(checks: .metadata, excluding: TreeComparator.isHidden).compare(expected: before, actual: copied))
+        for check in [TreeComparator.Checks.mtime, .permissions, .xattrs] {
+            XCTExpectFailure("#30: folder copies do not preserve metadata (check \(check.rawValue))", options: .treeDifferencesOnly) {
+                assertSnapshot(copied, matches: before, comparator: TreeComparator(checks: check, excluding: TreeComparator.isHidden))
+            }
         }
     }
 
@@ -333,9 +387,11 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         let outcome = await copyDirectory(tree.root, to: destination)
 
         try assertUnchanged(before)
-        XCTExpectFailure("#9: folder copy does not handle symlinks (to file, to dir, dangling, loop)") {
+        XCTExpectFailure("#9: folder copy fails on symlinks (to file, to dir, dangling, loop)") {
             XCTAssertNil(outcome.error)
-            let links = { (path: String) in !(path == "." || path == "links" || path.hasPrefix("links/")) }
+        }
+        let links = { (path: String) in !(path == "." || path == "links" || path.hasPrefix("links/")) }
+        XCTExpectFailure("#9: folder copy does not recreate symlinks", options: .treeDifferencesOnly) {
             assertTree(destination, matches: before,
                        comparator: TreeComparator(checks: [.presence, .type, .symlinkTarget], excluding: links))
         }
@@ -356,9 +412,12 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         XCTAssertTrue(outcome.isVerified)
         XCTAssertFalse(fm.fileExists(atPath: source.path), "source removed after a verified copy")
         let moved = try snapshot(destination)
-        assertNoDifferences(TreeComparator(checks: .data).compare(expected: before, actual: moved))
-        XCTExpectFailure("#30: cross-volume moves do not preserve mtime and permissions") {
-            assertNoDifferences(TreeComparator(checks: [.mtime, .permissions]).compare(expected: before, actual: moved))
+        assertSnapshot(moved, matches: before, comparator: TreeComparator(checks: .data))
+        XCTExpectFailure("#30: cross-volume moves do not preserve mtime", options: .treeDifferencesOnly) {
+            assertSnapshot(moved, matches: before, comparator: TreeComparator(checks: .mtime))
+        }
+        XCTExpectFailure("#30: cross-volume moves do not preserve permissions", options: .treeDifferencesOnly) {
+            assertSnapshot(moved, matches: before, comparator: TreeComparator(checks: .permissions))
         }
     }
 
@@ -388,7 +447,7 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         let outcome = await move(source, to: destination, checksum: false)
 
         XCTAssertNil(outcome.error)
-        assertNoDifferences(TreeComparator(checks: .data).compare(expected: before, actual: try snapshot(destination)))
+        assertTree(destination, matches: before, comparator: TreeComparator(checks: .data))
         XCTExpectFailure("#28: a cross-volume move deletes the source without verifying when checksums are off") {
             XCTAssertTrue(outcome.isVerified)
         }
@@ -405,8 +464,7 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         let outcome = await move(source, to: destination)
 
         try assertUnchanged(before)
-        assertNoDifferences(TreeComparator(checks: .data).compare(expected: before, actual: try snapshot(destination)),
-                            "verified destination is kept")
+        assertTree(destination, matches: before, comparator: TreeComparator(checks: .data), "verified destination is kept")
         XCTExpectFailure("#28: a verified copy whose source can't be deleted should be a reported partial success, not an error") {
             XCTAssertNil(outcome.error)
         }
@@ -421,8 +479,10 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         let outcome = await move(tree.root, to: destination)
 
         try assertUnchanged(before)
-        XCTExpectFailure("#9: moving a folder across volumes is not supported yet") {
+        XCTExpectFailure("#9: moving a folder across volumes fails") {
             XCTAssertNil(outcome.error)
+        }
+        XCTExpectFailure("#9: moving a folder across volumes leaves no destination folder") {
             XCTAssertTrue(fm.fileExists(atPath: destination.path))
         }
     }

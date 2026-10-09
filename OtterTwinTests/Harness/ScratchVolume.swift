@@ -66,9 +66,12 @@ final class ScratchVolume {
         } catch {
             // Never leave a half-made image attached: if attach succeeded but its
             // output was unusable, find the image in `hdiutil info` and detach it.
-            // Best effort; the original error is rethrown either way.
-            try? detachAll(attachedFrom: image)
-            try? FileManager.default.removeItem(at: work)
+            // Only then delete the work folder; if detaching failed, a mount may
+            // still live inside it, so it is left alone. The original error is
+            // rethrown either way.
+            if (try? detachAll(attachedFrom: image)) != nil {
+                try? FileManager.default.removeItem(at: work)  // nothing is mounted in it any more
+            }
             throw error
         }
     }
