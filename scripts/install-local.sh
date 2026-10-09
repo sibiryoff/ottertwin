@@ -39,6 +39,12 @@ while [ $# -gt 0 ]; do
     shift
 done
 
+# Resolve a relative --dest against the caller's directory before cd-ing.
+case "$DEST_DIR" in
+    /*) ;;
+    *) DEST_DIR="$PWD/$DEST_DIR" ;;
+esac
+
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -48,6 +54,8 @@ DEST_DIR="${DEST_DIR%/}"
 INSTALLED_APP="$DEST_DIR/${APP_NAME}.app"
 PREVIOUS_APP="$DEST_DIR/${APP_NAME} (previous).app"
 STAGING_APP="$DEST_DIR/.${APP_NAME}.app.installing-$$"
+# An older "previous" is parked here until the new app is in place.
+OLD_PREVIOUS_APP="$DEST_DIR/.${APP_NAME} (previous).app.old-$$"
 
 # Print a command; run it unless this is a dry run.
 run() {
@@ -139,15 +147,40 @@ run mkdir -p "$DEST_DIR"
 run ditto "$BUILT_APP" "$STAGING_APP"
 run codesign --verify --deep --strict "$STAGING_APP"
 
+MOVED_OLD_PREVIOUS=0
+MOVED_CURRENT=0
+
+# Undo the renames done so far, so a failed install never loses the current app.
+rollback() {
+    echo "error: installation failed; restoring the existing install" >&2
+    if [ "$MOVED_CURRENT" -eq 1 ] && [ ! -e "$INSTALLED_APP" ]; then
+        mv "$PREVIOUS_APP" "$INSTALLED_APP" ||
+            echo "error: could not restore it; your current app is at: $PREVIOUS_APP" >&2
+    fi
+    if [ "$MOVED_OLD_PREVIOUS" -eq 1 ] && [ ! -e "$PREVIOUS_APP" ]; then
+        mv "$OLD_PREVIOUS_APP" "$PREVIOUS_APP" ||
+            echo "error: could not restore it; the older previous app is at: $OLD_PREVIOUS_APP" >&2
+    fi
+    exit 1
+}
+
 if [ -e "$INSTALLED_APP" ]; then
     if [ -e "$PREVIOUS_APP" ]; then
-        run rm -rf "$PREVIOUS_APP"
+        run mv "$PREVIOUS_APP" "$OLD_PREVIOUS_APP" || rollback
+        MOVED_OLD_PREVIOUS=1
     fi
-    run mv "$INSTALLED_APP" "$PREVIOUS_APP"
+    run mv "$INSTALLED_APP" "$PREVIOUS_APP" || rollback
+    MOVED_CURRENT=1
 else
     echo "(no existing $INSTALLED_APP to keep as previous)"
 fi
-run mv "$STAGING_APP" "$INSTALLED_APP"
+run mv "$STAGING_APP" "$INSTALLED_APP" || rollback
+
+# Only now, with the new app installed, drop the older previous.
+if [ "$MOVED_OLD_PREVIOUS" -eq 1 ]; then
+    run rm -rf "$OLD_PREVIOUS_APP" ||
+        echo "warning: could not remove $OLD_PREVIOUS_APP; delete it manually" >&2
+fi
 
 # --- Report --------------------------------------------------------------------
 
