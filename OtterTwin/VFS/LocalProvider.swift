@@ -47,7 +47,7 @@ final class LocalProvider: VFSProvider {
 
     func readChunks(of url: URL, chunkSize: Int) -> AsyncThrowingStream<Data, Error> {
         AsyncThrowingStream { continuation in
-            Task.detached {
+            let reader = Task.detached {
                 do {
                     let access = try ScopedAccess(url: url)
                     defer { access.stop() }
@@ -64,6 +64,9 @@ final class LocalProvider: VFSProvider {
                     continuation.finish(throwing: error)
                 }
             }
+            // Stop reading and close the file as soon as the consumer goes away
+            // (e.g. its operation was cancelled, #6), instead of reading to EOF.
+            continuation.onTermination = { _ in reader.cancel() }
         }
     }
 

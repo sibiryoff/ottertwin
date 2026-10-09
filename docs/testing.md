@@ -73,9 +73,10 @@ A `VFSProvider` that does real work through `LocalProvider` and injects faults b
 | `readFaults[url] = ByteFault(offset: N)` | reading `url` yields bytes `0..<N`, then throws |
 | `writeFaults[url] = ByteFault(offset: N)` | writing `url` stores bytes `0..<N`, then `write` throws (and keeps throwing) |
 | `corruptions[url] = N` | silent corruption: the written byte at `N` is flipped (XOR 0xFF) |
-| `closeFaults[url]` | `close()` closes the file (data stays) and throws |
+| `closeFaults[url]` | `close()` throws before finalizing; the data stays in the writer's temporary file until `abort()` |
 | `deleteFaults[url]`, `moveFaults[source]`, `trashFaults[url]` | the call throws and changes nothing |
 | `pauseRead(of: url, beforeChunk: k)` | returns a `PausePoint`; the read stops right before chunk `k` |
+| `finalizeHooks[url] = { … }` | runs synchronously in the writing task right after a writer for `url` moved its file into place (e.g. to cancel that task with `withUnsafeCurrentTask`) |
 
 Faults fire at the same byte for any chunk size, every time. Reads are pull-based: a chunk is
 read only when the consumer asks for it. So at a pause point before chunk `k` of the source, the
@@ -89,6 +90,11 @@ let reached = await pause.waitUntilReached()   // false after a timeout
 operation.cancel()                                                 // act at exactly this point
 pause.release()
 ```
+
+Writes go through `ChunkedWriter` (#6): the data is written to a hidden temporary file in the
+destination folder, `.<name>.ottertwin-<uuid>.part` (`writer.temporaryURL`), and appears under the
+final name only when `close()` succeeds. Faults are still keyed by the final URL. To find partial
+files, filter a directory listing with `ChunkedWriter.isTemporaryFileName`.
 
 "Trash" moves items into a folder you pass to `init(fakeTrash:)`, never into `~/.Trash`. The
 provider also records calls (`readCalls`, `writerCalls`, `deleteCalls`, `moveCalls`,
@@ -116,7 +122,6 @@ Known gaps are wrapped in `XCTExpectFailure("#<issue>: …")`:
 
 | Gap | Issue |
 |---|---|
-| cancelling does not stop the running copy | #6 |
 | folder copy skips hidden entries and does not handle symlinks; folders cannot be moved across volumes | #9 |
 | copy rewrites NFC file names to NFD (single file started like the UI, and folder copy) | #48 |
 | a failed overwrite destroys the original destination | #27 |

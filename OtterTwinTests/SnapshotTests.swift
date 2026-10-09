@@ -26,7 +26,8 @@ final class SnapshotTests: XCTestCase {
         let view = OperationProgressView(
             operation: makeOperation(),
             state: .pending,
-            onCancel: {}
+            onCancel: {},
+            onDismiss: {}
         )
         assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 440, height: 260)))
     }
@@ -35,7 +36,8 @@ final class SnapshotTests: XCTestCase {
         let view = OperationProgressView(
             operation: makeOperation(),
             state: .copying(progress: 0.5),
-            onCancel: {}
+            onCancel: {},
+            onDismiss: {}
         )
         assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 440, height: 260)))
     }
@@ -44,7 +46,8 @@ final class SnapshotTests: XCTestCase {
         let view = OperationProgressView(
             operation: makeOperation(),
             state: .verifying(progress: 0.75),
-            onCancel: {}
+            onCancel: {},
+            onDismiss: {}
         )
         assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 440, height: 260)))
     }
@@ -54,7 +57,8 @@ final class SnapshotTests: XCTestCase {
         let view = OperationProgressView(
             operation: makeOperation(),
             state: .complete(result: .verified(sourceHash: srcHash, destHash: srcHash)),
-            onCancel: {}
+            onCancel: {},
+            onDismiss: {}
         )
         assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 440, height: 260)))
     }
@@ -63,7 +67,8 @@ final class SnapshotTests: XCTestCase {
         let view = OperationProgressView(
             operation: makeOperation(),
             state: .complete(result: .skipped),
-            onCancel: {}
+            onCancel: {},
+            onDismiss: {}
         )
         assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 440, height: 260)))
     }
@@ -74,7 +79,8 @@ final class SnapshotTests: XCTestCase {
         let view = OperationProgressView(
             operation: makeOperation(),
             state: .failed(.checksumMismatch(sourceHash: srcHash, destHash: destHash)),
-            onCancel: {}
+            onCancel: {},
+            onDismiss: {}
         )
         assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 440, height: 260)))
     }
@@ -83,7 +89,20 @@ final class SnapshotTests: XCTestCase {
         let view = OperationProgressView(
             operation: makeOperation(),
             state: .cancelled,
-            onCancel: {}
+            onCancel: {},
+            onDismiss: {}
+        )
+        assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 440, height: 260)))
+    }
+
+    /// #6: Cancel was pressed; the operation is still stopping (Cancel disabled).
+    func testProgressViewCancelling() {
+        let view = OperationProgressView(
+            operation: makeOperation(),
+            state: .copying(progress: 0.5),
+            isCancelling: true,
+            onCancel: {},
+            onDismiss: {}
         )
         assertSnapshot(of: NSHostingController(rootView: view), as: .image(size: CGSize(width: 440, height: 260)))
     }

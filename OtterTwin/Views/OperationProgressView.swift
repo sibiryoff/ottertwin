@@ -3,7 +3,12 @@ import SwiftUI
 struct OperationProgressView: View {
     let operation: FileOperation
     let state: OperationState
+    /// Cancel was requested; the operation is still stopping and cleaning up.
+    var isCancelling = false
+    /// Requests cancellation of the running operation (#6). The sheet stays open.
     let onCancel: () -> Void
+    /// Closes the sheet once the operation has ended (done, failed or cancelled).
+    let onDismiss: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -46,6 +51,14 @@ struct OperationProgressView: View {
             case .cancelled:
                 Label("Cancelled", systemImage: "xmark.circle")
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("progress.cancelled")
+            }
+
+            if isCancelling, !isFinished {
+                Text("Cancelling…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("progress.cancelling")
             }
 
             Spacer()
@@ -53,20 +66,29 @@ struct OperationProgressView: View {
             HStack {
                 Spacer()
                 if case .complete = state {
-                    Button("Done") { onCancel() }
+                    Button("Done") { onDismiss() }
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("progress.done")
-                } else if case .failed = state {
-                    Button("Close") { onCancel() }
+                } else if isFinished {
+                    Button("Close") { onDismiss() }
                         .accessibilityIdentifier("progress.close")
                 } else {
                     Button("Cancel", role: .cancel) { onCancel() }
+                        .disabled(isCancelling)
                         .accessibilityIdentifier("progress.cancel")
                 }
             }
         }
         .padding(20)
         .frame(width: 440, height: 260)
+    }
+
+    /// The operation has ended: the sheet offers to close instead of to cancel.
+    private var isFinished: Bool {
+        switch state {
+        case .complete, .failed, .cancelled: return true
+        case .pending, .copying, .verifying: return false
+        }
     }
 
     // MARK: - Sub-views

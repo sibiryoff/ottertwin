@@ -45,6 +45,7 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     private var _moveFaults: [URL: InjectedFault] = [:]
     private var _trashFaults: [URL: InjectedFault] = [:]
     private var _readPauses: [URL: [Int: PausePoint]] = [:]
+    private var _finalizeHooks: [URL: @Sendable () -> Void] = [:]
     private var _trashCalls: [URL] = []
     private var _deleteCalls: [URL] = []
     private var _moveCalls: [(from: URL, to: URL)] = []
@@ -103,6 +104,15 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     var trashFaults: [URL: InjectedFault] {
         get { locked { _trashFaults } }
         set { locked { _trashFaults = newValue } }
+    }
+
+    /// Runs right after a writer for the URL (the final destination) has
+    /// successfully closed and moved its file into place, synchronously in the
+    /// task that called `close()`. Lets a test act (e.g. cancel the current task
+    /// with `withUnsafeCurrentTask`) exactly between finalizing and what follows.
+    var finalizeHooks: [URL: @Sendable () -> Void] {
+        get { locked { _finalizeHooks } }
+        set { locked { _finalizeHooks = newValue } }
     }
 
     /// Returns a pause point that holds the next read of `url` right before its
@@ -201,7 +211,8 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
             return FaultInjectingWriter.Faults(
                 write: Self.lookup(_writeFaults, url),
                 corruptAt: Self.lookup(_corruptions, url),
-                close: Self.lookup(_closeFaults, url)
+                close: Self.lookup(_closeFaults, url),
+                afterFinalize: Self.lookup(_finalizeHooks, url)
             )
         }
         return try FaultInjectingWriter(url: url, faults: faults)
@@ -298,13 +309,14 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
 
 // MARK: - FaultInjectingWriter
 
-/// `ChunkedWriter` that writes through to the real file and injects the
-/// faults it was created with. Offsets are absolute positions in the file.
+/// `ChunkedWriter` that writes through to the real (temporary) file and injects
+/// the faults it was created with. Offsets are absolute positions in the file.
 final class FaultInjectingWriter: ChunkedWriter {
     struct Faults {
         var write: ByteFault?
         var corruptAt: Int64?
         var close: InjectedFault?
+        var afterFinalize: (@Sendable () -> Void)?
     }
 
     private let faults: Faults
@@ -335,13 +347,15 @@ final class FaultInjectingWriter: ChunkedWriter {
         offset += count
     }
 
+    /// With a close fault, nothing is finalized: the data written so far stays
+    /// in `temporaryURL` until the caller's `abort()` removes it (#6).
     override func close() throws {
         if let fault = faults.close {
-            abort()
             throw fault
         }
         try super.close()
         isClosed = true
+        faults.afterFinalize?()
     }
 
     override func abort() {

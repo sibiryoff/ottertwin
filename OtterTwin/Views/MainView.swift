@@ -65,8 +65,8 @@ final class AppState {
 struct MainView: View {
     @Environment(SettingsService.self) private var settings
     @State private var appState = AppState()
-    @State private var showProgress = false
-    @State private var currentOperation: FileOperation?
+    /// Owns the running copy/move task, so Cancel stops the real operation (#6).
+    @State private var operations = OperationRunner()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,13 +96,20 @@ struct MainView: View {
                 )
             }
         }
-        .sheet(isPresented: $showProgress) {
-            if let op = currentOperation {
+        .sheet(isPresented: Binding(
+            get: { operations.isPresented },
+            set: { if !$0 { operations.dismiss() } }
+        )) {
+            if let op = operations.currentOperation {
                 OperationProgressView(
                     operation: op,
                     state: op.state,
-                    onCancel: { showProgress = false }
+                    isCancelling: operations.isCancelling,
+                    onCancel: { operations.cancel() },
+                    onDismiss: { operations.dismiss() }
                 )
+                // Never hide the sheet while a file operation is still running.
+                .interactiveDismissDisabled(operations.isRunning)
             }
         }
         .onKeyPress(.tab) {
@@ -114,14 +121,14 @@ struct MainView: View {
 
     // MARK: - Operations
 
+    @MainActor
     private func triggerCopy() {
-        guard !appState.sourceSelection.isEmpty else { return }
-        Task { await runOperations(kind: .copy) }
+        runOperations(kind: .copy)
     }
 
+    @MainActor
     private func triggerMove() {
-        guard !appState.sourceSelection.isEmpty else { return }
-        Task { await runOperations(kind: .move) }
+        runOperations(kind: .move)
     }
 
     /// Confirm → Trash (or explicitly confirmed permanent delete) → refresh → report.
@@ -137,35 +144,26 @@ struct MainView: View {
     }
 
     @MainActor
-    private func runOperations(kind: OperationKind) async {
-        let provider = LocalProvider()
-        // Create service with the live environment settings so chunk size / checksum
-        // preferences take effect immediately without requiring an app restart.
-        let service = FileOperationService(settings: settings)
-
-        for sourceURL in appState.sourceSelection {
-            let destURL = appState.destPath.appendingPathComponent(sourceURL.lastPathComponent)
-            var op = FileOperation(source: sourceURL, destination: destURL, kind: kind)
-            currentOperation = op
-            showProgress = true
-
-            let stream: AsyncThrowingStream<OperationState, Error> = switch kind {
-            case .copy: await service.copy(source: sourceURL, destination: destURL, provider: provider)
-            case .move: await service.move(source: sourceURL, destination: destURL, provider: provider)
+    private func runOperations(kind: OperationKind) {
+        let sources = appState.sourceSelection.sorted { $0.path < $1.path }
+        guard !sources.isEmpty, !operations.isRunning else { return }
+        let appState = appState
+        operations.start(
+            kind: kind,
+            sources: sources,
+            destinationDirectory: appState.destPath,
+            provider: LocalProvider(),
+            // Create service with the live environment settings so chunk size / checksum
+            // preferences take effect immediately without requiring an app restart.
+            service: FileOperationService(settings: settings),
+            onFinish: {
+                appState.leftSelection = []
+                appState.rightSelection = []
+                // Show the result in both panels, including after a cancel or a
+                // failure (whose cleanup removed the partial file).
+                appState.reload(.left)
+                appState.reload(.right)
             }
-
-            do {
-                for try await state in stream {
-                    op.state = state
-                    currentOperation = op
-                }
-            } catch {
-                let opError: OperationError = (error as? OperationError) ?? .ioError(error)
-                op.state = .failed(opError)
-                currentOperation = op
-            }
-        }
-        appState.leftSelection = []
-        appState.rightSelection = []
+        )
     }
 }
