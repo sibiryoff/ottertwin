@@ -13,8 +13,9 @@ protocol VFSProvider {
     /// With `replacingExisting`, the writer's `commit()` atomically replaces an
     /// existing item at `url` (#27); otherwise an existing item is a conflict.
     func makeWriter(at url: URL, replacingExisting: Bool) throws -> ChunkedWriter
-    /// Same-volume atomic replace (#27): moves `source` to `destination`,
-    /// replacing the item there without deleting it first (see `AtomicRename`).
+    /// Same-volume replace (#27): moves `source` to `destination`, replacing
+    /// the item there without deleting it first and restoring it on failure
+    /// (see `AtomicRename.replace(…swapping: false)`).
     func replaceItem(at destination: URL, withItemAt source: URL) async throws
 
     /// Whether this provider can move items to the macOS Trash. Even when true,

@@ -113,8 +113,10 @@ final class LocalProvider: VFSProvider {
         try fm.moveItem(at: from, to: to)
     }
 
-    /// Atomic replace (#27): the existing item is swapped out, never deleted
-    /// before `source` is in its place.
+    /// Replace for same-volume moves (#27): the existing item is parked under a
+    /// hidden `.old` name, never deleted before `source` is in its place, and
+    /// restored if that fails. No `RENAME_SWAP`: it would leave the old item at
+    /// the user-visible source path until removed (see `AtomicRename.replace`).
     func replaceItem(at destination: URL, withItemAt source: URL) async throws {
         let sourceAccess = try ScopedAccess(url: source)
         let destinationAccess = try ScopedAccess(url: destination.deletingLastPathComponent())
@@ -122,7 +124,7 @@ final class LocalProvider: VFSProvider {
             sourceAccess.stop()
             destinationAccess.stop()
         }
-        try AtomicRename.system.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination))
+        try AtomicRename.system.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination), swapping: false)
     }
 
     // MARK: - Private helpers

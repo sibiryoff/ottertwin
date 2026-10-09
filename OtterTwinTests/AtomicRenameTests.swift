@@ -143,6 +143,67 @@ final class AtomicRenameTests: XCTestCase {
         }
     }
 
+    // MARK: - Same-volume move replace
+
+    /// A move never leaves the old destination at the (user-visible) source
+    /// path, even when the old destination cannot be fully removed: it is parked
+    /// under a hidden `.old` name next to the destination instead.
+    func testMoveReplaceNeverLeavesTheOldDestinationAtTheSourcePath() async throws {
+        let folder = tempDir.appendingPathComponent("dst", isDirectory: true)
+        let destination = folder.appendingPathComponent("target")
+        let locked = destination.appendingPathComponent("locked")
+        try HarnessPOSIX.makeDirectory(folder.path)
+        try HarnessPOSIX.makeDirectory(destination.path)
+        try HarnessPOSIX.makeDirectory(locked.path)
+        try HarnessPOSIX.writeFile(locked.appendingPathComponent("f").path, data: original)
+        try HarnessPOSIX.chmod(locked.path, 0o500)  // its file cannot be removed
+        defer { unlockLeftovers(in: folder) }
+        let source = tempDir.appendingPathComponent("moved.bin")
+        try HarnessPOSIX.writeFile(source.path, data: replacement)
+
+        try await LocalProvider().replaceItem(at: destination, withItemAt: source)
+
+        XCTAssertFalse(fm.fileExists(atPath: source.path), "nothing at the source path")
+        XCTAssertEqual(try Data(contentsOf: destination), replacement)
+        let leftovers = try contents(of: folder).filter { $0 != "target" }
+        XCTAssertEqual(leftovers.count, 1, "\(leftovers)")
+        XCTAssertTrue(leftovers.allSatisfy(ChunkedWriter.isTemporaryFileName), "only a hidden .old leftover: \(leftovers)")
+    }
+
+    /// Makes leftovers of the test above removable by `tearDown`.
+    private func unlockLeftovers(in folder: URL) {
+        guard let names = try? fm.contentsOfDirectory(atPath: folder.path) else { return }  // nothing to unlock
+        for name in names {
+            let locked = folder.appendingPathComponent(name).appendingPathComponent("locked")
+            if fm.fileExists(atPath: locked.path) {
+                try? HarnessPOSIX.chmod(locked.path, 0o700)  // best effort; tearDown reports anything left
+            }
+        }
+    }
+
+    func testMoveReplaceUsesNoSwap() async throws {
+        let (destination, source, _) = try makePair()
+        let provider = FaultInjectingProvider(fakeTrash: tempDir.appendingPathComponent("FakeTrash", isDirectory: true))
+        let flags = FlagLog()
+        provider.rename = AtomicRename { from, to, flag in
+            flags.append(flag)
+            return AtomicRename.system.renamex(from, to, flag)
+        }
+
+        try await provider.replaceItem(at: destination, withItemAt: source)
+
+        XCTAssertFalse(flags.values.contains(UInt32(RENAME_SWAP)), "\(flags.values)")
+        XCTAssertEqual(try Data(contentsOf: destination), replacement)
+        XCTAssertEqual(try contents(of: tempDir), ["file.bin"])
+    }
+
+    final class FlagLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _values: [UInt32] = []
+        var values: [UInt32] { lock.withLock { _values } }
+        func append(_ value: UInt32) { lock.withLock { _values.append(value) } }
+    }
+
     // MARK: - Exclusive move
 
     func testMoveExclusivelyNeverReplaces() throws {

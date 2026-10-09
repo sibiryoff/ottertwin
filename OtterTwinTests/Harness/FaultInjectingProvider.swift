@@ -263,7 +263,7 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
             return (Self.lookup(_moveFaults, source), _rename)
         }
         if let fault { throw fault }
-        try rename.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination))
+        try rename.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination), swapping: false)
     }
 
     @discardableResult

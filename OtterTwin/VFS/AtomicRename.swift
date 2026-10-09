@@ -58,7 +58,14 @@ struct AtomicRename {
     /// If the original disappeared meanwhile, `source` is moved into place
     /// exclusively instead. On error the original is in place, unchanged, and
     /// `source` is still at its own name.
-    func replace(_ destination: URL, with source: URL, backup: URL) throws {
+    ///
+    /// `swapping`: use `RENAME_SWAP` when available. A swap leaves the original
+    /// at `source`'s name until it is removed, which is fine for a hidden
+    /// temporary file but not for a user-visible source (a same-volume move):
+    /// if removing it failed, the old destination would sit at the source path
+    /// of a move that reported success. Pass false there, so the original only
+    /// ever waits under the hidden `backup` name.
+    func replace(_ destination: URL, with source: URL, backup: URL, swapping: Bool = true) throws {
         if Self.isSameFile(source, destination) {
             // A name change of one file (e.g. only its case, on a case-insensitive
             // volume): there is nothing to replace, and removing the "original"
@@ -68,19 +75,21 @@ struct AtomicRename {
             return
         }
 
-        let swapped = renamex(source.path, destination.path, UInt32(RENAME_SWAP))
-        if swapped == 0 {
-            // The new file is in place; the original now has `source`'s name.
-            removeReplacedOriginal(at: source)
-            return
+        if swapping {
+            let swapped = renamex(source.path, destination.path, UInt32(RENAME_SWAP))
+            if swapped == 0 {
+                // The new file is in place; the original now has `source`'s (hidden) name.
+                removeReplacedOriginal(at: source)
+                return
+            }
+            if swapped == ENOENT, !Self.exists(destination) {
+                try moveExclusively(from: source, to: destination)
+                return
+            }
+            guard Self.isUnsupported(swapped) else { throw Self.error(swapped) }
         }
-        if swapped == ENOENT, !Self.exists(destination) {
-            try moveExclusively(from: source, to: destination)
-            return
-        }
-        guard Self.isUnsupported(swapped) else { throw Self.error(swapped) }
 
-        // Fallback without RENAME_SWAP. 1: park the original under `backup`.
+        // Without RENAME_SWAP. 1: park the original under `backup`.
         do {
             try moveExclusively(from: destination, to: backup)
         } catch let error as POSIXError where error.code == .ENOENT && !Self.exists(destination) {
