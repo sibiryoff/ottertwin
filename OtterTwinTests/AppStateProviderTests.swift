@@ -7,8 +7,8 @@ final class AppStateProviderTests: XCTestCase {
     private let shareRoot = URL(fileURLWithPath: "/Volumes/share", isDirectory: true)
     private let fakeTrash = FileManager.default.temporaryDirectory.appendingPathComponent("unused-\(UUID().uuidString)")
 
-    private func makeShareProvider() -> FaultInjectingDeleteProvider {
-        let provider = FaultInjectingDeleteProvider(fakeTrash: fakeTrash, supportsTrash: false)
+    private func makeShareProvider() -> FaultInjectingProvider {
+        let provider = FaultInjectingProvider(fakeTrash: fakeTrash, supportsTrash: false)
         provider.managedRoot = shareRoot
         return provider
     }

@@ -44,8 +44,8 @@ final class DeleteFlowTests: XCTestCase {
         }
     }
 
-    private func makeProvider(supportsTrash: Bool = true) -> FaultInjectingDeleteProvider {
-        FaultInjectingDeleteProvider(
+    private func makeProvider(supportsTrash: Bool = true) -> FaultInjectingProvider {
+        FaultInjectingProvider(
             fakeTrash: tempDir.appendingPathComponent("FakeTrash", isDirectory: true),
             supportsTrash: supportsTrash
         )

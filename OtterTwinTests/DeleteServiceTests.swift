@@ -106,7 +106,7 @@ final class DeleteServiceTests: XCTestCase {
 
     func testProviderWithoutTrashThrowsTrashNotSupported() async throws {
         let file = try makeFile("z.txt")
-        let provider = FaultInjectingDeleteProvider(
+        let provider = FaultInjectingProvider(
             fakeTrash: tempDir.appendingPathComponent("FakeTrash"), supportsTrash: false
         )
 
@@ -119,7 +119,7 @@ final class DeleteServiceTests: XCTestCase {
     func testInjectedProviderFailureIsCollected() async throws {
         let ok = try makeFile("ok.txt")
         let bad = try makeFile("bad.txt")
-        let provider = FaultInjectingDeleteProvider(fakeTrash: tempDir.appendingPathComponent("FakeTrash"))
+        let provider = FaultInjectingProvider(fakeTrash: tempDir.appendingPathComponent("FakeTrash"))
         provider.deleteFaults[bad] = InjectedFault(message: "I/O error")
 
         let result = await makeService().deleteItems(urls: [ok, bad], mode: .permanent, provider: provider)
