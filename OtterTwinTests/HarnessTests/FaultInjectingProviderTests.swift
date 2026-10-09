@@ -49,8 +49,11 @@ final class FaultInjectingProviderTests: XCTestCase {
         }
     }
 
-    /// Writes `data` in `chunkSize` pieces; returns how many `write` calls succeeded and the error.
-    private func writeAll(_ data: Data, to url: URL, chunkSize: Int) throws -> (succeeded: Int, error: Error?) {
+    /// Writes `data` in `chunkSize` pieces; returns how many `write` calls succeeded,
+    /// the error, and the bytes the writer stored. Since #6 a writer stores its data
+    /// in a temporary file that only a successful `close()` moves to `url`, and that
+    /// `abort()` removes: on failure the stored bytes are read before the abort.
+    private func writeAll(_ data: Data, to url: URL, chunkSize: Int) throws -> (succeeded: Int, error: Error?, written: Data) {
         let writer = try provider.makeWriter(at: url)
         var succeeded = 0
         var offset = 0
@@ -62,10 +65,14 @@ final class FaultInjectingProviderTests: XCTestCase {
                 offset = end
             }
             try writer.close()
-            return (succeeded, nil)
+            XCTAssertFalse(fm.fileExists(atPath: writer.temporaryURL.path), "temporary file moved into place")
+            return (succeeded, nil, try Data(contentsOf: url))
         } catch {
+            let written = try Data(contentsOf: writer.temporaryURL)
             writer.abort()
-            return (succeeded, error)
+            XCTAssertFalse(fm.fileExists(atPath: writer.temporaryURL.path), "abort removes the temporary file")
+            XCTAssertFalse(fm.fileExists(atPath: url.path), "nothing appears under the final name")
+            return (succeeded, error, written)
         }
     }
 
@@ -111,10 +118,10 @@ final class FaultInjectingProviderTests: XCTestCase {
             for chunkSize in [1_024, 4_096, 7_777, 65_536] {
                 let url = tempDir.appendingPathComponent("w-\(offset)-\(chunkSize).bin")
                 provider.writeFaults = [url: ByteFault(offset: Int64(offset), error: fault)]
-                let (succeeded, error) = try writeAll(data, to: url, chunkSize: chunkSize)
+                let (succeeded, error, written) = try writeAll(data, to: url, chunkSize: chunkSize)
                 XCTAssertEqual(error as? InjectedFault, fault, "offset \(offset), chunk \(chunkSize)")
                 XCTAssertEqual(succeeded, offset / chunkSize, "the write that reaches the offset throws")
-                XCTAssertEqual(try Data(contentsOf: url), data.prefix(offset), "offset \(offset), chunk \(chunkSize)")
+                XCTAssertEqual(written, data.prefix(offset), "offset \(offset), chunk \(chunkSize)")
             }
         }
     }
@@ -125,8 +132,10 @@ final class FaultInjectingProviderTests: XCTestCase {
         let writer = try provider.makeWriter(at: url)
         XCTAssertThrowsError(try writer.write(Data([1, 2, 3, 4])))
         XCTAssertThrowsError(try writer.write(Data([5])))
+        XCTAssertEqual(try Data(contentsOf: writer.temporaryURL), Data([1, 2, 3]))
         writer.abort()
-        XCTAssertEqual(try Data(contentsOf: url), Data([1, 2, 3]))
+        XCTAssertFalse(fm.fileExists(atPath: writer.temporaryURL.path))
+        XCTAssertFalse(fm.fileExists(atPath: url.path))
     }
 
     // MARK: - Silent corruption
@@ -137,9 +146,8 @@ final class FaultInjectingProviderTests: XCTestCase {
             for chunkSize in [1_024, 4_096, 65_536] {
                 let url = tempDir.appendingPathComponent("c-\(offset)-\(chunkSize).bin")
                 provider.corruptions = [url: Int64(offset)]
-                let (_, error) = try writeAll(data, to: url, chunkSize: chunkSize)
+                let (_, error, written) = try writeAll(data, to: url, chunkSize: chunkSize)
                 XCTAssertNil(error, "corruption must not throw")
-                let written = try Data(contentsOf: url)
                 XCTAssertEqual(written.count, data.count)
                 let differing = (0..<data.count).filter { written[$0] != data[$0] }
                 XCTAssertEqual(differing, [offset], "offset \(offset), chunk \(chunkSize)")
@@ -155,21 +163,22 @@ final class FaultInjectingProviderTests: XCTestCase {
         let url = tempDir.appendingPathComponent("close.bin")
         provider.closeFaults = [url: fault]
         for _ in 0..<2 {
-            try? fm.removeItem(at: url)  // reset between the two identical runs; absent on the first
-            let (succeeded, error) = try writeAll(data, to: url, chunkSize: 1_000)
+            // writeAll checks that nothing appears under the final name and that
+            // abort removes the temporary file, so the two runs start alike.
+            let (succeeded, error, written) = try writeAll(data, to: url, chunkSize: 1_000)
             XCTAssertEqual(succeeded, 3, "all writes succeed")
             XCTAssertEqual(error as? InjectedFault, fault)
-            XCTAssertEqual(try Data(contentsOf: url), data)
+            XCTAssertEqual(written, data)
         }
     }
 
     func testWriterWithoutFaultsWritesThrough() throws {
         let data = FixtureTree.content(for: "ok", size: 10_000, seed: 1)
         let url = tempDir.appendingPathComponent("ok.bin")
-        let (succeeded, error) = try writeAll(data, to: url, chunkSize: 4_096)
+        let (succeeded, error, written) = try writeAll(data, to: url, chunkSize: 4_096)
         XCTAssertNil(error)
         XCTAssertEqual(succeeded, 3)
-        XCTAssertEqual(try Data(contentsOf: url), data)
+        XCTAssertEqual(written, data)
         XCTAssertEqual(provider.writerCalls, [url])
     }
 

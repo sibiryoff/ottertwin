@@ -300,8 +300,15 @@ final class CopyMoveCharacterizationTests: XCTestCase {
 
         let reachedCopy = await duringCopy.waitUntilReached()
         XCTAssertTrue(reachedCopy)
-        XCTAssertEqual(try HarnessPOSIX.lstat(destination.path).st_size, Int64(2 * Self.chunkSize),
-                       "paused after exactly two chunks were written")
+        // Since #6 the copy is written to a partial file and only appears under
+        // its final name once complete.
+        let partials = try partialFiles(in: tempDir)
+        XCTAssertEqual(partials.count, 1, "\(partials)")
+        if let partial = partials.first {
+            XCTAssertEqual(try HarnessPOSIX.lstat(tempDir.appendingPathComponent(partial).path).st_size,
+                           Int64(2 * Self.chunkSize), "paused after exactly two chunks were written")
+        }
+        XCTAssertFalse(fm.fileExists(atPath: destination.path), "no final-looking file while copying")
         XCTAssertFalse(duringVerification.isReached)
         duringCopy.release()
 
@@ -316,32 +323,52 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         assertNoDifferences(try dataDifferences(source, destination))
     }
 
-    func testCancelDuringCopyDoesNotStopTheOperation_knownGap6() async throws {
+    /// #6 (was a known gap): cancelling the task that consumes the stream
+    /// cancels the underlying copy. The stream form cleans up in the background,
+    /// so the partial file's removal is awaited here; the awaited form
+    /// (`copy(…onState:)`) is covered by `FileOperationCancellationTests`.
+    func testCancelDuringCopyStopsTheOperation() async throws {
         let tree = try makeFixture()
         let source = tree.url(FixtureTree.Path.multiChunk)
         let destination = tempDir.appendingPathComponent("cancelled.bin")
+        let before = try snapshot(source)
         let duringCopy = provider.pauseRead(of: source, beforeChunk: 1)
         let duringVerification = provider.pauseRead(of: destination, beforeChunk: 0)
         let operation = Task { await copy(source, to: destination) }
 
         let reachedCopy = await duringCopy.waitUntilReached()
         XCTAssertTrue(reachedCopy)
+        XCTAssertEqual(try partialFiles(in: tempDir).count, 1)
         operation.cancel()
         duringCopy.release()
         _ = await operation.value
 
         // A cancelled copy must never get as far as verifying.
         let continued = await duringVerification.waitUntilReached(timeout: 5)
-        XCTExpectFailure("#6: cancelling the caller does not cancel the underlying copy task") {
-            XCTAssertFalse(continued, "copy kept running after cancel")
-        }
+        XCTAssertFalse(continued, "copy kept running after cancel")
         duringVerification.release()
-        if continued {
-            // Let the detached copy finish its verification read (its last I/O)
-            // so it cannot race tearDown's removal of the temp folder.
-            let finished = await provider.waitUntilReadsFinished(of: destination)
-            XCTAssertTrue(finished, "detached copy did not finish")
+        let finished = await provider.waitUntilReadsFinished(of: source)
+        XCTAssertTrue(finished, "the source read stopped")
+        XCTAssertEqual(provider.bytesDelivered(from: source), Int64(Self.chunkSize), "no byte read after the cancel")
+        let cleanedUp = await waitUntil { (try? self.partialFiles(in: self.tempDir).isEmpty) == true }
+        XCTAssertTrue(cleanedUp, "partial file removed")
+        XCTAssertFalse(fm.fileExists(atPath: destination.path))
+        try assertUnchanged(before)
+    }
+
+    /// `ChunkedWriter` temporary (partial) files in `directory`.
+    private func partialFiles(in directory: URL) throws -> [String] {
+        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isTemporaryFileName)
+    }
+
+    /// Polls `condition` until it holds; false after `timeout`.
+    private func waitUntil(timeout: TimeInterval = 10, _ condition: () -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() >= deadline { return false }
+            try? await Task.sleep(nanoseconds: 5_000_000)  // test polling; the deadline bounds the wait
         }
+        return true
     }
 
     // MARK: - Folder copy

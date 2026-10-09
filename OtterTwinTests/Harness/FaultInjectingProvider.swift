@@ -298,8 +298,8 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
 
 // MARK: - FaultInjectingWriter
 
-/// `ChunkedWriter` that writes through to the real file and injects the
-/// faults it was created with. Offsets are absolute positions in the file.
+/// `ChunkedWriter` that writes through to the real (temporary) file and injects
+/// the faults it was created with. Offsets are absolute positions in the file.
 final class FaultInjectingWriter: ChunkedWriter {
     struct Faults {
         var write: ByteFault?
@@ -335,9 +335,10 @@ final class FaultInjectingWriter: ChunkedWriter {
         offset += count
     }
 
+    /// With a close fault, nothing is finalized: the data written so far stays
+    /// in `temporaryURL` until the caller's `abort()` removes it (#6).
     override func close() throws {
         if let fault = faults.close {
-            abort()
             throw fault
         }
         try super.close()

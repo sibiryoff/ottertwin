@@ -3,7 +3,11 @@ import SwiftUI
 struct OperationProgressView: View {
     let operation: FileOperation
     let state: OperationState
-    let onRequestCancel: () -> Void
+    /// Cancel was requested; the operation is still stopping and cleaning up.
+    var isCancelling = false
+    /// Requests cancellation of the running operation (#6). The sheet stays open.
+    let onCancel: () -> Void
+    /// Closes the sheet once the operation has ended (done, failed or cancelled).
     let onDismiss: () -> Void
 
     var body: some View {
@@ -47,6 +51,14 @@ struct OperationProgressView: View {
             case .cancelled:
                 Label("Cancelled", systemImage: "xmark.circle")
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("progress.cancelled")
+            }
+
+            if isCancelling, !isFinished {
+                Text("Cancelling…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("progress.cancelling")
             }
 
             Spacer()
@@ -57,11 +69,12 @@ struct OperationProgressView: View {
                     Button("Done") { onDismiss() }
                         .keyboardShortcut(.defaultAction)
                         .accessibilityIdentifier("progress.done")
-                } else if isTerminalFailure {
+                } else if isFinished {
                     Button("Close") { onDismiss() }
                         .accessibilityIdentifier("progress.close")
                 } else {
-                    Button("Cancel", role: .cancel) { onRequestCancel() }
+                    Button("Cancel", role: .cancel) { onCancel() }
+                        .disabled(isCancelling)
                         .accessibilityIdentifier("progress.cancel")
                 }
             }
@@ -70,10 +83,12 @@ struct OperationProgressView: View {
         .frame(width: 440, height: 260)
     }
 
-    private var isTerminalFailure: Bool {
-        if case .failed = state { return true }
-        if case .cancelled = state { return true }
-        return false
+    /// The operation has ended: the sheet offers to close instead of to cancel.
+    private var isFinished: Bool {
+        switch state {
+        case .complete, .failed, .cancelled: return true
+        case .pending, .copying, .verifying: return false
+        }
     }
 
     // MARK: - Sub-views
