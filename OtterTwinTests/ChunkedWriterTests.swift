@@ -3,9 +3,9 @@ import Darwin
 @testable import OtterTwin
 
 /// #6: `ChunkedWriter` writes to a temporary file that is unique per writer
-/// (per operation), owner-only and created exclusively; only `close()` moves it
-/// to the final name, never over an existing item; `abort()` removes only its
-/// own temporary file.
+/// (per operation), owner-only and created exclusively; only `commit()` (or
+/// `close()`) moves it to the final name, never over an existing item unless
+/// the writer replaces it (#27); `abort()` removes only its own temporary file.
 final class ChunkedWriterTests: XCTestCase {
     private let fm = FileManager.default
     private var tempDir: URL!
@@ -38,7 +38,7 @@ final class ChunkedWriterTests: XCTestCase {
         for writer in [first, second] {
             XCTAssertEqual(writer.destinationURL, destination)
             XCTAssertEqual(writer.temporaryURL.deletingLastPathComponent(), tempDir, "same folder as the destination")
-            XCTAssertTrue(ChunkedWriter.isTemporaryFileName(writer.temporaryURL.lastPathComponent))
+            XCTAssertTrue(ChunkedWriter.isDiscardablePartialFileName(writer.temporaryURL.lastPathComponent))
             XCTAssertEqual(try permissions(writer.temporaryURL), 0o600)
         }
 
@@ -85,8 +85,63 @@ final class ChunkedWriterTests: XCTestCase {
     }
 
     func testTemporaryFileNameRecognition() {
-        XCTAssertTrue(ChunkedWriter.isTemporaryFileName(".a.bin.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.part"))
-        XCTAssertFalse(ChunkedWriter.isTemporaryFileName("a.bin"))
-        XCTAssertFalse(ChunkedWriter.isTemporaryFileName(".a.bin.part"))
+        let part = ".a.bin.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.part"
+        let old = ".a.bin.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.old"
+        XCTAssertTrue(ChunkedWriter.isDiscardablePartialFileName(part))
+        XCTAssertFalse(ChunkedWriter.isDiscardablePartialFileName("a.bin"))
+        XCTAssertFalse(ChunkedWriter.isDiscardablePartialFileName(".a.bin.part"))
+        XCTAssertTrue(ChunkedWriter.isParkedOriginalFileName(old), "#27 parked original")
+        XCTAssertFalse(ChunkedWriter.isParkedOriginalFileName(".a.bin.old"))
+        XCTAssertFalse(ChunkedWriter.isParkedOriginalFileName(part))
+        XCTAssertFalse(ChunkedWriter.isParkedOriginalFileName("a.bin"))
+    }
+
+    /// #27: a parked original (`.old`) can be the user's only copy of the
+    /// original destination, so the discardable-partial predicate, the one a
+    /// cleanup of stale partial files would use, must never match it.
+    func testPartialPredicateNeverMatchesAParkedOriginal() {
+        let destination = URL(fileURLWithPath: "/x/a.bin")
+        for _ in 0..<20 {
+            let parked = ChunkedWriter.backupURL(for: destination).lastPathComponent
+            XCTAssertTrue(ChunkedWriter.isParkedOriginalFileName(parked), parked)
+            XCTAssertFalse(ChunkedWriter.isDiscardablePartialFileName(parked), parked)
+        }
+        for name in [".a.bin.ottertwin-X.old", ".a.part.ottertwin-0F1C1D7E-1111-2222-3333-444455556666.old",
+                     "." + String(repeating: "n", count: 100) + ".ottertwin-0F1C1D7E-1111-2222-3333-444455556666.old"] {
+            XCTAssertFalse(ChunkedWriter.isDiscardablePartialFileName(name), name)
+        }
+    }
+
+    /// #27: a replacing writer keeps the existing item until `commit()`, which
+    /// swaps the finished file in and removes the original.
+    func testReplacingWriterKeepsTheOriginalUntilCommit() throws {
+        let destination = tempDir.appendingPathComponent("file.bin")
+        try Data("original".utf8).write(to: destination)
+        let writer = try LocalProvider().makeWriter(at: destination, replacingExisting: true)
+        XCTAssertNotEqual(writer.backupURL, writer.temporaryURL)
+        XCTAssertEqual(writer.backupURL.deletingLastPathComponent(), tempDir)
+
+        try writer.write(Data([1, 2, 3]))
+        try writer.finishWriting()
+        XCTAssertEqual(try Data(contentsOf: writer.temporaryURL), Data([1, 2, 3]), "finished data is in the temporary file")
+        XCTAssertEqual(try Data(contentsOf: destination), Data("original".utf8), "untouched before commit")
+
+        try writer.commit()
+        XCTAssertEqual(try Data(contentsOf: destination), Data([1, 2, 3]))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: tempDir.path), ["file.bin"], "no temporary or .old file left")
+        writer.abort()
+        XCTAssertEqual(try Data(contentsOf: destination), Data([1, 2, 3]), "abort after commit never touches the destination")
+    }
+
+    func testAbortedReplacingWriterLeavesTheOriginal() throws {
+        let destination = tempDir.appendingPathComponent("file.bin")
+        try Data("original".utf8).write(to: destination)
+        let writer = try LocalProvider().makeWriter(at: destination, replacingExisting: true)
+        try writer.write(Data([1, 2, 3]))
+        try writer.finishWriting()
+
+        writer.abort()
+        XCTAssertEqual(try Data(contentsOf: destination), Data("original".utf8))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: tempDir.path), ["file.bin"])
     }
 }

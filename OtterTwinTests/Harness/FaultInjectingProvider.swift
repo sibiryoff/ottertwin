@@ -30,6 +30,12 @@ struct ByteFault {
 ///
 /// "Trash" is simulated by moving items into a test-owned folder, so nothing
 /// ever leaves the test's temp directory. Faults match on the standardized path.
+///
+/// Since #27 a copy is verified in the writer's temporary file, before it is
+/// moved into place. Reads of a writer's temporary file therefore count as
+/// reads of its final URL: read faults, pause points and recorded reads are
+/// keyed by the final URL, as before. `rename` replaces the renames that
+/// writers and `replaceItem` finalize with (see `AtomicRename.withoutRenameFlags`).
 final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     private let local = LocalProvider()
     private let fakeTrash: URL
@@ -46,6 +52,9 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     private var _trashFaults: [URL: InjectedFault] = [:]
     private var _readPauses: [URL: [Int: PausePoint]] = [:]
     private var _finalizeHooks: [URL: @Sendable () -> Void] = [:]
+    private var _rename: AtomicRename = .system
+    private var _temporaryFiles: [String: URL] = [:]
+    private var _replaceCalls: [(source: URL, destination: URL)] = []
     private var _trashCalls: [URL] = []
     private var _deleteCalls: [URL] = []
     private var _moveCalls: [(from: URL, to: URL)] = []
@@ -107,12 +116,18 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     }
 
     /// Runs right after a writer for the URL (the final destination) has
-    /// successfully closed and moved its file into place, synchronously in the
-    /// task that called `close()`. Lets a test act (e.g. cancel the current task
+    /// successfully committed (moved its file into place), synchronously in the
+    /// task that called `commit()`. Lets a test act (e.g. cancel the current task
     /// with `withUnsafeCurrentTask`) exactly between finalizing and what follows.
     var finalizeHooks: [URL: @Sendable () -> Void] {
         get { locked { _finalizeHooks } }
         set { locked { _finalizeHooks = newValue } }
+    }
+
+    /// The rename primitive writers and `replaceItem` use to finalize.
+    var rename: AtomicRename {
+        get { locked { _rename } }
+        set { locked { _rename = newValue } }
     }
 
     /// Returns a pause point that holds the next read of `url` right before its
@@ -129,6 +144,7 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     var trashCalls: [URL] { locked { _trashCalls } }
     var deleteCalls: [URL] { locked { _deleteCalls } }
     var moveCalls: [(from: URL, to: URL)] { locked { _moveCalls } }
+    var replaceCalls: [(source: URL, destination: URL)] { locked { _replaceCalls } }
     var readCalls: [URL] { locked { _readCalls } }
     var writerCalls: [URL] { locked { _writerCalls } }
     /// Bytes delivered so far by read streams of `url` (all streams combined).
@@ -153,11 +169,13 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     func createDirectory(at url: URL) async throws { try await local.createDirectory(at: url) }
 
     func readChunks(of url: URL, chunkSize: Int) -> AsyncThrowingStream<Data, Error> {
-        let (fault, pauses) = locked { () -> (ByteFault?, [Int: PausePoint]) in
-            _readCalls.append(url)
-            return (Self.lookup(_readFaults, url), Self.lookup(_readPauses, url) ?? [:])
+        let (logical, fault, pauses) = locked { () -> (URL, ByteFault?, [Int: PausePoint]) in
+            // A writer's temporary file is read as its final URL (#27, see above).
+            let logical = _temporaryFiles[Self.key(url)] ?? url
+            _readCalls.append(logical)
+            return (logical, Self.lookup(_readFaults, logical), Self.lookup(_readPauses, logical) ?? [:])
         }
-        let key = Self.key(url)
+        let key = Self.key(logical)
         let state = ReadState(url: url, chunkSize: chunkSize) { [self] in
             self.locked { self._finishedReads[key, default: 0] += 1 }
         }
@@ -205,17 +223,19 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
         })
     }
 
-    func makeWriter(at url: URL) throws -> ChunkedWriter {
-        let faults = locked { () -> FaultInjectingWriter.Faults in
+    func makeWriter(at url: URL, replacingExisting: Bool) throws -> ChunkedWriter {
+        let (faults, rename) = locked { () -> (FaultInjectingWriter.Faults, AtomicRename) in
             _writerCalls.append(url)
-            return FaultInjectingWriter.Faults(
+            return (FaultInjectingWriter.Faults(
                 write: Self.lookup(_writeFaults, url),
                 corruptAt: Self.lookup(_corruptions, url),
                 close: Self.lookup(_closeFaults, url),
                 afterFinalize: Self.lookup(_finalizeHooks, url)
-            )
+            ), _rename)
         }
-        return try FaultInjectingWriter(url: url, faults: faults)
+        let writer = try FaultInjectingWriter(url: url, replacingExisting: replacingExisting, rename: rename, faults: faults)
+        locked { _temporaryFiles[Self.key(writer.temporaryURL)] = url }
+        return writer
     }
 
     func delete(_ url: URL) async throws {
@@ -234,6 +254,16 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
         }
         if let fault { throw fault }
         try await local.move(from: from, to: to)
+    }
+
+    /// Keyed by `source` for `moveFaults`, like `move`.
+    func replaceItem(at destination: URL, withItemAt source: URL) async throws {
+        let (fault, rename) = locked { () -> (InjectedFault?, AtomicRename) in
+            _replaceCalls.append((source, destination))
+            return (Self.lookup(_moveFaults, source), _rename)
+        }
+        if let fault { throw fault }
+        try rename.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination), swapping: false)
     }
 
     @discardableResult
@@ -322,10 +352,11 @@ final class FaultInjectingWriter: ChunkedWriter {
     private let faults: Faults
     private var offset: Int64 = 0
     private var isClosed = false
+    private var isCommitted = false
 
-    init(url: URL, faults: Faults) throws {
+    init(url: URL, replacingExisting: Bool = false, rename: AtomicRename = .system, faults: Faults) throws {
         self.faults = faults
-        try super.init(url: url)
+        try super.init(url: url, replacingExisting: replacingExisting, rename: rename)
     }
 
     override func write(_ chunk: Data) throws {
@@ -347,13 +378,20 @@ final class FaultInjectingWriter: ChunkedWriter {
         offset += count
     }
 
-    /// With a close fault, nothing is finalized: the data written so far stays
-    /// in `temporaryURL` until the caller's `abort()` removes it (#6).
-    override func close() throws {
+    /// With a close fault, finishing the file fails and nothing is finalized:
+    /// the data written so far stays in `temporaryURL` until the caller's
+    /// `abort()` removes it (#6).
+    override func finishWriting() throws {
         if let fault = faults.close {
             throw fault
         }
-        try super.close()
+        try super.finishWriting()
+    }
+
+    override func commit() throws {
+        guard !isCommitted else { return }
+        try super.commit()
+        isCommitted = true
         isClosed = true
         faults.afterFinalize?()
     }
@@ -410,5 +448,25 @@ final class PausePoint: @unchecked Sendable {
             try? await Task.sleep(nanoseconds: 5_000_000)  // test polling; the deadline bounds the wait
         }
         return true
+    }
+}
+
+// MARK: - AtomicRename simulations
+
+extension AtomicRename {
+    /// Behaves like a file system without `RENAME_EXCL` and `RENAME_SWAP`
+    /// (smbfs, ExFAT, FAT): every flagged rename fails with `ENOTSUP`, so
+    /// `AtomicRename` takes its fallback. `intercept` runs before each plain
+    /// rename; returning an errno fails that rename (nothing is renamed),
+    /// returning nil lets it happen. Use it to inject failures, or to create a
+    /// file, between the fallback's steps.
+    static func withoutRenameFlags(
+        intercept: @escaping (_ from: URL, _ to: URL) -> Int32? = { _, _ in nil }
+    ) -> AtomicRename {
+        AtomicRename { from, to, flags in
+            if flags != 0 { return ENOTSUP }
+            if let injected = intercept(URL(fileURLWithPath: from), URL(fileURLWithPath: to)) { return injected }
+            return AtomicRename.system.renamex(from, to, 0)
+        }
     }
 }

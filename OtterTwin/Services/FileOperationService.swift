@@ -23,8 +23,12 @@ actor FileOperationService {
     ///
     /// Cancellation (#6): cancelling the caller's task stops the copy or the
     /// verification at the next chunk. This throws `OperationError.cancelled`
-    /// only after the cleanup has finished: the partial (temporary) file or the
-    /// unverified destination is removed and the source is never touched.
+    /// only after the cleanup has finished: the partial (temporary) file is
+    /// removed, and neither the source nor an existing destination is touched.
+    ///
+    /// `.overwrite` (#27): an existing destination is replaced atomically, and
+    /// only after the new copy is complete and verified; any failure or cancel
+    /// before that leaves it byte-identical.
     func copy(
         source: URL,
         destination: URL,
@@ -33,15 +37,14 @@ actor FileOperationService {
         onState: @escaping StateHandler
     ) async throws {
         try await reportingCancellation {
-            guard let dest = try await self.resolvedDestination(
-                source: source, destination: destination,
-                provider: provider, resolution: conflictResolution
+            guard let target = self.resolvedDestination(
+                destination: destination, resolution: conflictResolution
             ) else {
                 onState(.complete(result: .skipped))
                 return
             }
             let result = try await self.performCopy(
-                source: source, destination: dest,
+                source: source, target: target,
                 provider: provider, onState: onState
             )
             onState(.complete(result: result))
@@ -60,9 +63,8 @@ actor FileOperationService {
     ) async throws {
         try await reportingCancellation {
             let sameVolume = self.isSameVolume(source, destination)
-            guard let dest = try await self.resolvedDestination(
-                source: source, destination: destination,
-                provider: provider, resolution: conflictResolution
+            guard let target = self.resolvedDestination(
+                destination: destination, resolution: conflictResolution
             ) else {
                 onState(.complete(result: .skipped))
                 return
@@ -70,20 +72,28 @@ actor FileOperationService {
 
             if sameVolume {
                 let result = try await self.performSameVolumeMove(
-                    source: source, destination: dest,
+                    source: source, target: target,
                     provider: provider, onState: onState
                 )
                 onState(.complete(result: result))
             } else {
                 let result = try await self.performCopy(
-                    source: source, destination: dest,
+                    source: source, target: target,
                     provider: provider, onState: onState
                 )
+                let dest = target.url
                 // Last point to cancel: the source has not been touched yet.
-                // Remove the copy we just made so a cancelled move leaves the
-                // file system as it was.
                 if Task.isCancelled {
-                    await self.removeIncompleteDestination(dest, provider: provider, reason: "move cancelled before source delete")
+                    if target.replacesExisting {
+                        // The verified copy has already replaced the original
+                        // destination, which is gone: removing the copy would
+                        // leave neither. Keep it; the source stays untouched.
+                        Self.logger.warning("Move cancelled after its copy replaced the destination; the copy is kept and the source is not deleted")
+                    } else {
+                        // Remove the copy we just made so a cancelled move
+                        // leaves the file system as it was.
+                        await self.removeIncompleteDestination(dest, provider: provider, reason: "move cancelled before source delete")
+                    }
                     throw OperationError.cancelled
                 }
                 try await provider.delete(source)
@@ -175,12 +185,17 @@ actor FileOperationService {
 
     // MARK: - Core copy+verify
 
+    /// Atomic finalize (#27): the copy is written to the writer's temporary
+    /// file, verified there, and only then moved into place (or swapped with
+    /// the existing destination for `.overwrite`). Every failure or cancel
+    /// before that point only discards the temporary file.
     private func performCopy(
         source: URL,
-        destination: URL,
+        target: Target,
         provider: any VFSProvider,
         onState: StateHandler
     ) async throws -> VerificationResult {
+        let destination = target.url
         let chunkSize = settings.chunkSizeBytes
         let checksumEnabled = settings.checksumEnabled
         let totalSize = source.fileByteCount
@@ -190,14 +205,14 @@ actor FileOperationService {
         try Task.checkCancellation()
         let writer: ChunkedWriter
         do {
-            writer = try provider.makeWriter(at: destination)
+            writer = try provider.makeWriter(at: destination, replacingExisting: target.replacesExisting)
         } catch {
             if Self.isFileExistsError(error) { throw OperationError.conflict(existingURL: destination) }
             throw OperationError.ioError(error)
         }
 
         // The writer stores the data in a temporary file in the destination
-        // folder, unique to this operation; only `close()` moves it into place.
+        // folder, unique to this operation; only `commit()` moves it into place.
         // `abort()` removes the temporary file and never touches `destination`.
         do {
             for try await chunk in provider.readChunks(of: source, chunkSize: chunkSize) {
@@ -211,7 +226,36 @@ actor FileOperationService {
             // A cancelled task can end a provider's stream early *without*
             // throwing; never finalize a file that may be truncated.
             try Task.checkCancellation()
-            try writer.close()
+            try writer.finishWriting()
+        } catch is CancellationError {
+            writer.abort()
+            throw OperationError.cancelled
+        } catch {
+            writer.abort()
+            throw OperationError.ioError(error)
+        }
+
+        let result: VerificationResult
+        if checksumEnabled {
+            let sourceHex = sourceHasher.finalize().hexString
+            let destHex = try await verifiedHash(of: writer, chunkSize: chunkSize, provider: provider, onState: onState)
+            guard sourceHex == destHex else {
+                writer.abort()
+                throw OperationError.checksumMismatch(sourceHash: sourceHex, destHash: destHex)
+            }
+            result = .verified(sourceHash: sourceHex, destHash: destHex)
+        } else {
+            Self.logger.warning("Checksum verification skipped for destination: \(destination.path, privacy: .public)")
+            result = .skipped
+        }
+
+        // Applying the source's metadata (#30) belongs here, before the copy
+        // becomes visible under its final name.
+
+        // Last point to cancel: the destination has not been touched yet.
+        do {
+            try Task.checkCancellation()
+            try writer.commit()
         } catch is CancellationError {
             writer.abort()
             throw OperationError.cancelled
@@ -220,21 +264,24 @@ actor FileOperationService {
             if Self.isFileExistsError(error) { throw OperationError.conflict(existingURL: destination) }
             throw OperationError.ioError(error)
         }
+        return result
+    }
 
-        guard checksumEnabled else {
-            Self.logger.warning("Checksum verification skipped for destination: \(destination.path, privacy: .public)")
-            return .skipped
-        }
-
-        // From here on `destination` is the file this operation created
-        // (exclusively), so removing it on cancel or failure is safe.
-        let sourceHex = sourceHasher.finalize().hexString
+    /// Reads back the writer's finished temporary file and returns its SHA-256.
+    /// On cancel or error the temporary file is discarded (`abort()`).
+    private func verifiedHash(
+        of writer: ChunkedWriter,
+        chunkSize: Int,
+        provider: any VFSProvider,
+        onState: StateHandler
+    ) async throws -> String {
         var destHasher = SHA256()
         var bytesVerified: Int64 = 0
-        let destSize = destination.fileByteCount
+        let copy = writer.temporaryURL
+        let destSize = copy.fileByteCount
 
         do {
-            for try await chunk in provider.readChunks(of: destination, chunkSize: chunkSize) {
+            for try await chunk in provider.readChunks(of: copy, chunkSize: chunkSize) {
                 try Task.checkCancellation()
                 destHasher.update(data: chunk)
                 bytesVerified += Int64(chunk.count)
@@ -244,24 +291,19 @@ actor FileOperationService {
             // An early, silent end of the stream must not count as verified.
             try Task.checkCancellation()
         } catch is CancellationError {
-            await removeIncompleteDestination(destination, provider: provider, reason: "verification cancelled")
+            writer.abort()
             throw OperationError.cancelled
         } catch {
-            await removeIncompleteDestination(destination, provider: provider, reason: "verification failed")
+            writer.abort()
             throw OperationError.ioError(error)
         }
-
-        let destHex = destHasher.finalize().hexString
-        if sourceHex != destHex {
-            await removeIncompleteDestination(destination, provider: provider, reason: "checksum mismatch")
-            throw OperationError.checksumMismatch(sourceHash: sourceHex, destHash: destHex)
-        }
-        return .verified(sourceHash: sourceHex, destHash: destHex)
+        return destHasher.finalize().hexString
     }
 
-    /// Removes a destination this operation created but did not verify. The
-    /// error that led here is what gets reported, so a failed removal is logged
-    /// rather than thrown; it is never silently ignored.
+    /// Removes a destination this operation created and finalized, when a move
+    /// is cancelled before deleting its source. The error that led here is what
+    /// gets reported, so a failed removal is logged rather than thrown; it is
+    /// never silently ignored.
     private func removeIncompleteDestination(_ destination: URL, provider: any VFSProvider, reason: String) async {
         do {
             try await provider.delete(destination)
@@ -274,10 +316,11 @@ actor FileOperationService {
 
     private func performSameVolumeMove(
         source: URL,
-        destination: URL,
+        target: Target,
         provider: any VFSProvider,
         onState: StateHandler
     ) async throws -> VerificationResult {
+        let destination = target.url
         let chunkSize = settings.chunkSizeBytes
         let checksumEnabled = settings.checksumEnabled
 
@@ -299,8 +342,13 @@ actor FileOperationService {
 
         // Last point to cancel: nothing has been changed yet.
         try Task.checkCancellation()
-        // Atomic rename
-        try await provider.move(from: source, to: destination)
+        // Atomic rename. `.overwrite` (#27) swaps the existing item out instead
+        // of deleting it first.
+        if target.replacesExisting {
+            try await provider.replaceItem(at: destination, withItemAt: source)
+        } else {
+            try await provider.move(from: source, to: destination)
+        }
 
         guard checksumEnabled, let srcHex = sourceHex else {
             Self.logger.warning("Checksum verification skipped for same-volume move destination: \(destination.path, privacy: .public)")
@@ -371,12 +419,11 @@ actor FileOperationService {
                     depth: depth + 1
                 )
             } else {
-                guard let dest = try await resolvedDestination(
-                    source: child.id, destination: childDest,
-                    provider: provider, resolution: conflictResolution
+                guard let target = resolvedDestination(
+                    destination: childDest, resolution: conflictResolution
                 ) else { continue }
                 let result = try await performCopy(
-                    source: child.id, destination: dest,
+                    source: child.id, target: target,
                     provider: provider, onState: onState
                 )
                 onState(.complete(result: result))
@@ -386,18 +433,26 @@ actor FileOperationService {
 
     // MARK: - Conflict resolution
 
-    /// Returns resolved destination URL, or nil if the file should be skipped.
+    /// Where a file goes, and whether it replaces an existing item there.
+    private struct Target {
+        let url: URL
+        let replacesExisting: Bool
+    }
+
+    /// Returns the resolved destination, or nil if the file should be skipped.
+    /// Nothing is deleted here: `.overwrite` replaces the existing item only
+    /// once the new data is in place and verified (#27).
     private func resolvedDestination(
-        source: URL,
         destination: URL,
-        provider: any VFSProvider,
         resolution: ConflictResolution
-    ) async throws -> URL? {
-        guard FileManager.default.fileExists(atPath: destination.path) else { return destination }
+    ) -> Target? {
+        guard Self.itemExists(at: destination) else {
+            return Target(url: destination, replacesExisting: false)
+        }
         switch resolution {
-        case .skip:     return nil
-        case .overwrite: try await provider.delete(destination); return destination
-        case .rename:   return uniqueDestination(base: destination)
+        case .skip:      return nil
+        case .overwrite: return Target(url: destination, replacesExisting: true)
+        case .rename:    return Target(url: uniqueDestination(base: destination), replacesExisting: false)
         }
     }
 
@@ -411,7 +466,7 @@ actor FileOperationService {
             let name = ext.isEmpty ? "\(stem)-\(counter)" : "\(stem)-\(counter).\(ext)"
             candidate = dir.appendingPathComponent(name)
             counter += 1
-        } while FileManager.default.fileExists(atPath: candidate.path)
+        } while Self.itemExists(at: candidate)
         return candidate
     }
 
@@ -456,6 +511,13 @@ actor FileOperationService {
 
     private static func volumeIdentifier(for url: URL) -> NSNumber? {
         try? FileManager.default.attributesOfItem(atPath: url.path)[.systemNumber] as? NSNumber
+    }
+
+    /// Whether anything is at `url`, without following symlinks: a dangling
+    /// symlink counts as an existing item.
+    private static func itemExists(at url: URL) -> Bool {
+        var info = stat()
+        return lstat(url.path, &info) == 0
     }
 
     private static func isFileExistsError(_ error: Error) -> Bool {

@@ -265,7 +265,9 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: destination.path))
     }
 
-    func testFailedOverwriteDestroysTheOriginalDestination_knownGap27() async throws {
+    /// #27 (was a known gap): a failed overwrite keeps the original destination.
+    /// More cases (corruption, cancel, other volumes, no rename swap) are in `AtomicFinalizeTests`.
+    func testFailedOverwriteKeepsTheOriginalDestination() async throws {
         let tree = try makeFixture()
         let source = tree.url(FixtureTree.Path.multiChunk)
         let destination = tempDir.appendingPathComponent("existing.bin")
@@ -278,14 +280,12 @@ final class CopyMoveCharacterizationTests: XCTestCase {
 
         XCTAssertNotNil(outcome.error)
         try assertUnchanged(sourceBefore)
-        XCTExpectFailure("#27: overwrite deletes the original destination before the new copy is verified") {
-            XCTAssertTrue(fm.fileExists(atPath: destination.path), "original destination must survive")
-        }
-        // Once #27 keeps the original, it must also be byte-identical (a guarantee, not an expectation).
-        if fm.fileExists(atPath: destination.path) {
-            assertTree(destination, matches: original, comparator: TreeComparator(checks: .data),
-                       "original destination must survive byte-identical")
-        }
+        XCTAssertTrue(fm.fileExists(atPath: destination.path), "original destination must survive")
+        assertTree(destination, matches: original, comparator: TreeComparator(checks: .data),
+                   "original destination must survive byte-identical")
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: tempDir.path).filter {
+            ChunkedWriter.isDiscardablePartialFileName($0) || ChunkedWriter.isParkedOriginalFileName($0)
+        }, [], "no partial or .old file left")
     }
 
     // MARK: - Pause points: exactly during copy / exactly during verification
@@ -314,13 +314,21 @@ final class CopyMoveCharacterizationTests: XCTestCase {
 
         let reachedVerification = await duringVerification.waitUntilReached()
         XCTAssertTrue(reachedVerification)
-        XCTAssertEqual(try HarnessPOSIX.lstat(destination.path).st_size, try HarnessPOSIX.lstat(source.path).st_size,
-                       "verification starts after the whole file was written")
+        // Since #27 the copy is verified in its partial file, before it gets its final name.
+        let verifiedPartials = try partialFiles(in: tempDir)
+        XCTAssertEqual(verifiedPartials.count, 1, "\(verifiedPartials)")
+        if let partial = verifiedPartials.first {
+            XCTAssertEqual(try HarnessPOSIX.lstat(tempDir.appendingPathComponent(partial).path).st_size,
+                           try HarnessPOSIX.lstat(source.path).st_size,
+                           "verification starts after the whole file was written")
+        }
+        XCTAssertFalse(fm.fileExists(atPath: destination.path), "no final-looking file before verification")
         duringVerification.release()
 
         let outcome = await operation.value
         XCTAssertTrue(outcome.isVerified)
         assertNoDifferences(try dataDifferences(source, destination))
+        XCTAssertEqual(try partialFiles(in: tempDir), [])
     }
 
     /// #6 (was a known gap): cancelling the task that consumes the stream
@@ -358,7 +366,7 @@ final class CopyMoveCharacterizationTests: XCTestCase {
 
     /// `ChunkedWriter` temporary (partial) files in `directory`.
     private func partialFiles(in directory: URL) throws -> [String] {
-        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isTemporaryFileName)
+        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isDiscardablePartialFileName)
     }
 
     /// Polls `condition` until it holds; false after `timeout`.

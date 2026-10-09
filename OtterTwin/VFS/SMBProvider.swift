@@ -52,8 +52,8 @@ final class SMBProvider: VFSProvider {
         return lp.readChunks(of: url, chunkSize: chunkSize)
     }
 
-    func makeWriter(at url: URL) throws -> ChunkedWriter {
-        try provider().makeWriter(at: url)
+    func makeWriter(at url: URL, replacingExisting: Bool) throws -> ChunkedWriter {
+        try provider().makeWriter(at: url, replacingExisting: replacingExisting)
     }
 
     func createDirectory(at url: URL) async throws {
@@ -81,6 +81,10 @@ final class SMBProvider: VFSProvider {
 
     func move(from: URL, to: URL) async throws {
         try await provider().move(from: from, to: to)
+    }
+
+    func replaceItem(at destination: URL, withItemAt source: URL) async throws {
+        try await provider().replaceItem(at: destination, withItemAt: source)
     }
 
     // MARK: - Root URL

@@ -100,7 +100,7 @@ final class FileOperationCancellationTests: XCTestCase {
 
     /// Names of `ChunkedWriter` temporary files in `directory`.
     private func partialFiles(in directory: URL) throws -> [String] {
-        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isTemporaryFileName)
+        try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isDiscardablePartialFileName)
     }
 
     private func size(_ url: URL) throws -> Int64 { try HarnessPOSIX.lstat(url.path).st_size }
@@ -160,7 +160,7 @@ final class FileOperationCancellationTests: XCTestCase {
         XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path), [], "no destination and no partial file left")
     }
 
-    func testCancelDuringVerificationRemovesTheUnverifiedDestination() async throws {
+    func testCancelDuringVerificationRemovesTheUnverifiedCopy() async throws {
         let tree = try makeFixture()
         let source = tree.url(FixtureTree.Path.multiChunk)
         let destination = output.appendingPathComponent("copy.bin")
@@ -172,8 +172,13 @@ final class FileOperationCancellationTests: XCTestCase {
         let reached = await duringVerification.waitUntilReached()
         XCTAssertTrue(reached)
         XCTAssertTrue(log.didVerify, "verification has started")
-        XCTAssertEqual(try size(destination), try size(source), "the copy was fully written")
-        XCTAssertEqual(try partialFiles(in: output), [])
+        // Since #27 the copy is verified in its partial file, before it gets its final name.
+        let partials = try partialFiles(in: output)
+        XCTAssertEqual(partials.count, 1, "\(partials)")
+        if let partial = partials.first {
+            XCTAssertEqual(try size(output.appendingPathComponent(partial)), try size(source), "the copy was fully written")
+        }
+        XCTAssertFalse(fm.fileExists(atPath: destination.path), "no final-looking file before verification")
 
         operation.cancel()
         duringVerification.release()

@@ -73,10 +73,11 @@ A `VFSProvider` that does real work through `LocalProvider` and injects faults b
 | `readFaults[url] = ByteFault(offset: N)` | reading `url` yields bytes `0..<N`, then throws |
 | `writeFaults[url] = ByteFault(offset: N)` | writing `url` stores bytes `0..<N`, then `write` throws (and keeps throwing) |
 | `corruptions[url] = N` | silent corruption: the written byte at `N` is flipped (XOR 0xFF) |
-| `closeFaults[url]` | `close()` throws before finalizing; the data stays in the writer's temporary file until `abort()` |
-| `deleteFaults[url]`, `moveFaults[source]`, `trashFaults[url]` | the call throws and changes nothing |
+| `closeFaults[url]` | finishing the file (`finishWriting()`, also via `close()`) throws before finalizing; the data stays in the writer's temporary file until `abort()` |
+| `deleteFaults[url]`, `moveFaults[source]`, `trashFaults[url]` | the call throws and changes nothing (`moveFaults` also apply to `replaceItem`) |
 | `pauseRead(of: url, beforeChunk: k)` | returns a `PausePoint`; the read stops right before chunk `k` |
-| `finalizeHooks[url] = { … }` | runs synchronously in the writing task right after a writer for `url` moved its file into place (e.g. to cancel that task with `withUnsafeCurrentTask`) |
+| `finalizeHooks[url] = { … }` | runs synchronously in the writing task right after a writer for `url` committed (moved its file into place), e.g. to cancel that task with `withUnsafeCurrentTask` |
+| `rename = .withoutRenameFlags(intercept:)` | writers and `replaceItem` finalize as on smbfs/ExFAT (no `RENAME_EXCL`/`RENAME_SWAP`), so the fallback runs on APFS too; `intercept` can fail or act around each plain rename |
 
 Faults fire at the same byte for any chunk size, every time. Reads are pull-based: a chunk is
 read only when the consumer asks for it. So at a pause point before chunk `k` of the source, the
@@ -92,13 +93,23 @@ pause.release()
 ```
 
 Writes go through `ChunkedWriter` (#6): the data is written to a hidden temporary file in the
-destination folder, `.<name>.ottertwin-<uuid>.part` (`writer.temporaryURL`), and appears under the
-final name only when `close()` succeeds. Faults are still keyed by the final URL. To find partial
-files, filter a directory listing with `ChunkedWriter.isTemporaryFileName`.
+destination folder, `.<name>.ottertwin-<uuid>.part` (`writer.temporaryURL`). Since #27 the copy is
+verified in that file (`finishWriting()`, verify, then `commit()`), and it appears under the final
+name only when `commit()` succeeds: `RENAME_EXCL` for a new destination, `RENAME_SWAP` for a copy
+with `.overwrite`, or (without swap support) the fallback that parks the original as
+`.<name>.ottertwin-<uuid>.old` and restores it on failure (see `AtomicRename`). Same-volume moves with
+`.overwrite` (`replaceItem`) never swap: they always park the original as `.old`, so the old
+destination can never land at the user-visible source path. Faults are still keyed by the final URL,
+and reads of a writer's temporary file count as reads of its final URL (read faults, pause points,
+`readCalls`), so a pause before chunk 0 of the destination is still exactly the start of
+verification. To find partial files, filter a directory listing with
+`ChunkedWriter.isDiscardablePartialFileName`; parked originals match
+`ChunkedWriter.isParkedOriginalFileName`. A `.old` that remains (e.g. after a failed restore) can be
+the user's only copy of the original and must never be deleted automatically.
 
 "Trash" moves items into a folder you pass to `init(fakeTrash:)`, never into `~/.Trash`. The
 provider also records calls (`readCalls`, `writerCalls`, `deleteCalls`, `moveCalls`,
-`trashCalls`).
+`replaceCalls`, `trashCalls`).
 
 ### `ScratchVolume`: separate volumes made by the test
 
@@ -111,8 +122,8 @@ let destination = volume.mountPoint.appendingPathComponent("file.bin")
 not under `/Volumes`. `makeScratchVolume` registers a teardown block that always detaches the
 image and deletes it, and a failed detach fails the test. When `hdiutil` is missing the test is
 skipped (`XCTSkip`). Use it for cross-volume behaviour (copy and verify, then delete the source)
-and for non-APFS file systems (ExFAT and FAT have no xattrs, coarse timestamps and no rename
-swap).
+and for non-APFS file systems (ExFAT and FAT have no xattrs and coarse timestamps; ExFAT has no
+`RENAME_SWAP`, while the macOS msdos driver for FAT32 does support it, see `AtomicRenameTests`).
 
 ### Characterization tests and known gaps
 
@@ -124,12 +135,15 @@ Known gaps are wrapped in `XCTExpectFailure("#<issue>: …")`:
 |---|---|
 | folder copy skips hidden entries and does not handle symlinks; folders cannot be moved across volumes | #9 |
 | copy rewrites NFC file names to NFD (single file started like the UI, and folder copy) | #48 |
-| a failed overwrite destroys the original destination | #27 |
 | a cross-volume move with checksums off does not verify; a failed source delete is an error, not a partial success | #28 |
 | mtime, permissions and xattrs are not preserved | #30 |
 
 Each block holds one assertion, so a partial fix shows up. Blocks that compare trees pass `options: .treeDifferencesOnly`, so a harness error (for example, a failing `lstat`) is never counted as the expected failure. Expected failures are strict. When a fix makes a block pass, the test fails until the fixing PR
 removes that `XCTExpectFailure` and keeps the assertion. The gap then becomes a guarantee.
+
+Closed gaps: #27 (a failed overwrite destroyed the original destination). Atomic finalize is covered
+by `AtomicFinalizeTests` (every case on the same volume, with and without rename flags, and onto
+APFS and ExFAT scratch volumes) and `AtomicRenameTests` (the fallback's failure paths).
 
 ## What CI verifies vs. what the owner checks at gates
 
