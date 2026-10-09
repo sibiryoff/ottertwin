@@ -30,13 +30,30 @@ enum OperationState {
     case copying(progress: Double)    // 0–1, source-read / write phase
     case verifying(progress: Double)  // 0–1, dest-read phase
     case complete(result: VerificationResult)
+    /// Everything that keeps the data safe succeeded, but not all of the
+    /// operation (#28): e.g. a move whose verified copy is kept while its
+    /// source could not be removed. Not a failure: nothing is cleaned up.
+    case partiallyComplete(result: VerificationResult, issue: PartialCompletionIssue)
     case failed(OperationError)
     case cancelled
 }
 
 enum VerificationResult {
-    case verified(sourceHash: String, destHash: String)
-    case skipped  // checksumEnabled == false
+    /// The destination was flushed to storage (`flushMode`), then read back
+    /// through a new descriptor (`cacheBypassed`: with `F_NOCACHE`), and its
+    /// SHA-256 matched the source's (#28).
+    case verified(sourceHash: String, destHash: String, flushMode: FlushMode, cacheBypassed: Bool)
+    case skipped  // checksumEnabled == false (copies only), or conflict skipped
+    /// Same-volume move (#28): an atomic rename. The data was not rewritten,
+    /// so there was nothing to verify.
+    case renamed
+}
+
+/// What was left undone by a `.partiallyComplete` operation (#28).
+enum PartialCompletionIssue {
+    /// A cross-volume move copied and verified the file, but deleting the
+    /// source failed. Both copies exist.
+    case sourceNotRemoved(Error)
 }
 
 enum OperationError: Error {

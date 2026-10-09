@@ -78,6 +78,7 @@ A `VFSProvider` that does real work through `LocalProvider` and injects faults b
 | `pauseRead(of: url, beforeChunk: k)` | returns a `PausePoint`; the read stops right before chunk `k` |
 | `finalizeHooks[url] = { … }` | runs synchronously in the writing task right after a writer for `url` committed (moved its file into place), e.g. to cancel that task with `withUnsafeCurrentTask` |
 | `rename = .withoutRenameFlags(intercept:)` | writers and `replaceItem` finalize as on smbfs/ExFAT (no `RENAME_EXCL`/`RENAME_SWAP`), so the fallback runs on APFS too; `intercept` can fail or act around each plain rename |
+| `flush = .withoutFullFsync(fullFsyncError:fsyncError:calls:)` | writers flush as on smbfs/ExFAT: `F_FULLFSYNC` fails (`ENOTSUP` by default) and the real `fsync` runs, or fails with `fsyncError`; `FlushCalls` counts the calls |
 
 Faults fire at the same byte for any chunk size, every time. Reads are pull-based: a chunk is
 read only when the consumer asks for it. So at a pause point before chunk `k` of the source, the
@@ -111,6 +112,13 @@ the user's only copy of the original and must never be deleted automatically.
 provider also records calls (`readCalls`, `writerCalls`, `deleteCalls`, `moveCalls`,
 `replaceCalls`, `trashCalls`).
 
+Verification reads (#28) go through `openForVerification`, which the harness implements with the
+production `UncachedFileReader` (a new descriptor with `F_NOCACHE`). Each open is recorded in
+`verificationOpens` with the final URL, the file actually opened, whether `F_NOCACHE` was set, and the
+writer's state at that moment (`writerClosed`, `writerFlushMode`), so a test can prove the copy was
+flushed and closed before it was read back. Read faults and pause points apply to these reads too
+(they also count in `readCalls`).
+
 ### `ScratchVolume`: separate volumes made by the test
 
 ```swift
@@ -135,7 +143,6 @@ Known gaps are wrapped in `XCTExpectFailure("#<issue>: …")`:
 |---|---|
 | folder copy skips hidden entries and does not handle symlinks; folders cannot be moved across volumes | #9 |
 | copy rewrites NFC file names to NFD (single file started like the UI, and folder copy) | #48 |
-| a cross-volume move with checksums off does not verify; a failed source delete is an error, not a partial success | #28 |
 | mtime, permissions and xattrs are not preserved | #30 |
 
 Each block holds one assertion, so a partial fix shows up. Blocks that compare trees pass `options: .treeDifferencesOnly`, so a harness error (for example, a failing `lstat`) is never counted as the expected failure. Expected failures are strict. When a fix makes a block pass, the test fails until the fixing PR
@@ -144,6 +151,45 @@ removes that `XCTExpectFailure` and keeps the assertion. The gap then becomes a 
 Closed gaps: #27 (a failed overwrite destroyed the original destination). Atomic finalize is covered
 by `AtomicFinalizeTests` (every case on the same volume, with and without rename flags, and onto
 APFS and ExFAT scratch volumes) and `AtomicRenameTests` (the fallback's failure paths).
+#28 (a cross-volume move with checksums off did not verify; a failed source delete after a verified
+copy was an error): see the next section.
+
+## What verification proves, and its limits (#28)
+
+A copy is verified like this:
+
+1. `ChunkedWriter.finishWriting()` flushes the temporary file with `fcntl(F_FULLFSYNC)`. Where the
+   file system reports that unsupported (`ENOTSUP`, `EOPNOTSUPP`, `EINVAL`, `ENOTTY`; smbfs and
+   possibly ExFAT/FAT), it uses `fsync` instead. Any other flush error fails the copy. Then it
+   closes the descriptor. The temporary file is also written with `F_NOCACHE`, so its pages are not
+   kept in the buffer cache.
+2. Verification opens the file again (`VFSProvider.openForVerification`, `UncachedFileReader`):
+   a new descriptor with `F_NOCACHE`, and hashes what it reads.
+3. `VerificationResult.verified` records `flushMode` (`.fullFsync` or `.fsync`) and
+   `cacheBypassed` (whether `F_NOCACHE` was set on the verification descriptor), for the summary and
+   report (#11, #13).
+
+Moves: a cross-volume move always verifies, even when checksums are off in Settings, because it
+deletes the source. If deleting the source fails after a verified copy, the copy is kept and the
+move ends `.partiallyComplete(result:, issue: .sourceNotRemoved(error))`, not as a failure. A
+same-volume move is an atomic rename (`.renamed`): the data is not rewritten, so nothing is hashed.
+
+Limits (not something the client can fix):
+
+- `F_NOCACHE` only affects this Mac's unified buffer cache. A NAS's own RAM cache, a RAID
+  controller's cache or a drive's write cache can still answer the read. With `.fsync` (smbfs, some
+  removable file systems) the data was handed to the server or device, which may still hold it in
+  volatile memory.
+- `F_NOCACHE` stops the file's pages from being cached; pages another process cached may still be
+  used. The writer's own `F_NOCACHE` keeps the copy's pages out of the cache in the first place.
+- smbfs may keep its own client-side state for an open file; the verification descriptor is opened
+  only after the writer's descriptor was closed.
+- The directory entry (the rename in `commit()`) is not flushed separately.
+
+Tests: `VerificationDurabilityTests` (spy on the verification open, writer flush, the
+`F_FULLFSYNC` → `fsync` fallback on ExFAT and FAT32 scratch volumes, failed flushes) and
+`CopyMoveCharacterizationTests` (cross-volume moves with checksums off, corruption, failed source
+delete). Real SMB shares and NAS caches are checked by the owner at the gates.
 
 ## What CI verifies vs. what the owner checks at gates
 

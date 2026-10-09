@@ -70,6 +70,21 @@ final class LocalProvider: VFSProvider {
         }
     }
 
+    // MARK: - Verification read (#28)
+
+    func openForVerification(_ url: URL, chunkSize: Int) throws -> VerificationRead {
+        let access = try ScopedAccess(url: url)
+        let reader: UncachedFileReader
+        do {
+            reader = try UncachedFileReader(url: url)
+        } catch {
+            access.stop()
+            throw error
+        }
+        return VerificationRead(chunks: reader.chunks(chunkSize: chunkSize, keepAlive: access),
+                                cacheBypassed: reader.cacheBypassed)
+    }
+
     // MARK: - Write
 
     func makeWriter(at url: URL, replacingExisting: Bool) throws -> ChunkedWriter {

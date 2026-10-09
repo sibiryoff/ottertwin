@@ -45,6 +45,9 @@ struct OperationProgressView: View {
             case .complete(let result):
                 completionView(result: result)
 
+            case .partiallyComplete(_, let issue):
+                partialCompletionView(issue: issue)
+
             case .failed(let error):
                 failureView(error: error)
 
@@ -86,7 +89,7 @@ struct OperationProgressView: View {
     /// The operation has ended: the sheet offers to close instead of to cancel.
     private var isFinished: Bool {
         switch state {
-        case .complete, .failed, .cancelled: return true
+        case .complete, .partiallyComplete, .failed, .cancelled: return true
         case .pending, .copying, .verifying: return false
         }
     }
@@ -96,7 +99,7 @@ struct OperationProgressView: View {
     @ViewBuilder
     private func completionView(result: VerificationResult) -> some View {
         switch result {
-        case .verified(let srcHash, let destHash):
+        case .verified(let srcHash, let destHash, _, _):
             VStack(alignment: .leading, spacing: 8) {
                 Label("Verified", systemImage: "checkmark.seal.fill")
                     .foregroundStyle(.green)
@@ -112,6 +115,26 @@ struct OperationProgressView: View {
         case .skipped:
             Label("Complete (checksum skipped)", systemImage: "checkmark.circle")
                 .foregroundStyle(.secondary)
+
+        case .renamed:
+            Label("Moved (renamed on the same volume)", systemImage: "checkmark.circle")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private func partialCompletionView(issue: PartialCompletionIssue) -> some View {
+        switch issue {
+        case .sourceNotRemoved(let error):
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Copied and verified — source not removed", systemImage: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .font(.subheadline.bold())
+                Text(error.localizedDescription)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("progress.sourceNotRemoved")
         }
     }
 

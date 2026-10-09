@@ -52,6 +52,10 @@ final class SMBProvider: VFSProvider {
         return lp.readChunks(of: url, chunkSize: chunkSize)
     }
 
+    func openForVerification(_ url: URL, chunkSize: Int) throws -> VerificationRead {
+        try provider().openForVerification(url, chunkSize: chunkSize)
+    }
+
     func makeWriter(at url: URL, replacingExisting: Bool) throws -> ChunkedWriter {
         try provider().makeWriter(at: url, replacingExisting: replacingExisting)
     }
