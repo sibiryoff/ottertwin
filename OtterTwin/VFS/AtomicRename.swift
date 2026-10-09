@@ -10,8 +10,9 @@ import OSLog
 /// - Replace (`replace`): `renamex_np(RENAME_SWAP)` exchanges the two names in
 ///   one step, then the swapped-out original is removed.
 ///
-/// File systems without these flags (smbfs, ExFAT, FAT) report `ENOTSUP` or
-/// `EINVAL` and get a fallback:
+/// File systems without these flags (smbfs, ExFAT; on CI the macOS msdos/FAT32
+/// driver does support `RENAME_SWAP`) report `ENOTSUP` or `EINVAL` and get a
+/// fallback:
 /// - exclusive: check, then rename. A short window remains between the check
 ///   and the rename; without kernel support (and without hard links, which
 ///   these file systems lack too) it cannot be closed.

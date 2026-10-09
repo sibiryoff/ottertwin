@@ -77,7 +77,7 @@ A `VFSProvider` that does real work through `LocalProvider` and injects faults b
 | `deleteFaults[url]`, `moveFaults[source]`, `trashFaults[url]` | the call throws and changes nothing (`moveFaults` also apply to `replaceItem`) |
 | `pauseRead(of: url, beforeChunk: k)` | returns a `PausePoint`; the read stops right before chunk `k` |
 | `finalizeHooks[url] = { … }` | runs synchronously in the writing task right after a writer for `url` committed (moved its file into place), e.g. to cancel that task with `withUnsafeCurrentTask` |
-| `rename = .withoutRenameFlags(intercept:)` | writers and `replaceItem` finalize as on smbfs/ExFAT/FAT (no `RENAME_EXCL`/`RENAME_SWAP`), so the fallback runs on APFS too; `intercept` can fail or act around each plain rename |
+| `rename = .withoutRenameFlags(intercept:)` | writers and `replaceItem` finalize as on smbfs/ExFAT (no `RENAME_EXCL`/`RENAME_SWAP`), so the fallback runs on APFS too; `intercept` can fail or act around each plain rename |
 
 Faults fire at the same byte for any chunk size, every time. Reads are pull-based: a chunk is
 read only when the consumer asks for it. So at a pause point before chunk `k` of the source, the
@@ -117,8 +117,8 @@ let destination = volume.mountPoint.appendingPathComponent("file.bin")
 not under `/Volumes`. `makeScratchVolume` registers a teardown block that always detaches the
 image and deletes it, and a failed detach fails the test. When `hdiutil` is missing the test is
 skipped (`XCTSkip`). Use it for cross-volume behaviour (copy and verify, then delete the source)
-and for non-APFS file systems (ExFAT and FAT have no xattrs, coarse timestamps and no rename
-swap).
+and for non-APFS file systems (ExFAT and FAT have no xattrs and coarse timestamps; ExFAT has no
+`RENAME_SWAP`, while the macOS msdos driver for FAT32 does support it, see `AtomicRenameTests`).
 
 ### Characterization tests and known gaps
 

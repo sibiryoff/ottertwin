@@ -162,22 +162,30 @@ final class AtomicRenameTests: XCTestCase {
         }
     }
 
-    // MARK: - Real file systems without RENAME_SWAP
+    // MARK: - Real non-APFS file systems
 
-    /// ExFAT and FAT32 have no `RENAME_SWAP`, so `AtomicFinalizeTests` on ExFAT
-    /// exercise the real fallback; replacing still works on both.
-    func testExFATAndFATHaveNoRenameSwapAndReplaceStillWorks() throws {
+    /// ExFAT has no `RENAME_SWAP`, so `AtomicFinalizeTests` on ExFAT exercise
+    /// the real fallback.
+    func testExFATHasNoRenameSwap() throws {
+        let volume = try makeScratchVolume(.exfat)
+        let (destination, source, _) = try makePair(in: volume.mountPoint)
+
+        let swap = renamex_np(source.path, destination.path, UInt32(RENAME_SWAP))
+        let code = errno
+
+        XCTAssertNotEqual(swap, 0, "ExFAT unexpectedly supports RENAME_SWAP")
+        if swap != 0 {
+            XCTAssertTrue(AtomicRename.isUnsupported(code), "errno \(code)")
+        }
+        XCTAssertEqual(try Data(contentsOf: destination), original, "a failed swap changes nothing")
+    }
+
+    /// Replacing works on ExFAT (fallback) and FAT32 (whose msdos driver does
+    /// support `RENAME_SWAP`).
+    func testReplaceWorksOnExFATAndFAT32() throws {
         for fileSystem in [ScratchVolume.FileSystem.exfat, .fat32] {
             let volume = try makeScratchVolume(fileSystem)
             let (destination, source, backup) = try makePair(in: volume.mountPoint)
-
-            let swap = renamex_np(source.path, destination.path, UInt32(RENAME_SWAP))
-            let code = errno
-            XCTAssertNotEqual(swap, 0, "\(fileSystem.rawValue) unexpectedly supports RENAME_SWAP")
-            if swap != 0 {
-                XCTAssertTrue(AtomicRename.isUnsupported(code), "\(fileSystem.rawValue): errno \(code)")
-            }
-            XCTAssertEqual(try Data(contentsOf: destination), original, fileSystem.rawValue)
 
             try AtomicRename.system.replace(destination, with: source, backup: backup)
 
