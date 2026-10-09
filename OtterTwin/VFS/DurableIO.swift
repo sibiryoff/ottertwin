@@ -120,40 +120,31 @@ struct VerificationRead {
 }
 
 extension UncachedFileReader {
-    /// A pull-based stream of the reader's chunks: nothing is read ahead of the
-    /// consumer, and the descriptor is closed at the end (EOF, error or cancel).
+    /// The reader's chunks, read in a task of their own. The descriptor is
+    /// closed explicitly when the stream ends for any reason: end of file,
+    /// error, cancellation, or the consumer stopping early or dropping the
+    /// stream (`onTermination` cancels the task, which closes the descriptor
+    /// itself, so it is never closed while a read is in progress).
     /// `keepAlive` is retained until then (e.g. a scoped-access token).
     func chunks(chunkSize: Int, keepAlive: AnyObject? = nil) -> AsyncThrowingStream<Data, Error> {
-        let state = StreamState(reader: self, keepAlive: keepAlive)
-        return AsyncThrowingStream(unfolding: {
-            guard !state.finished else { return nil }
-            do {
-                try Task.checkCancellation()
-                if let chunk = try self.read(upToCount: chunkSize) { return chunk }
-                state.finish()
-                return nil
-            } catch {
-                state.finish()
-                throw error
+        AsyncThrowingStream { continuation in
+            let task = Task.detached {
+                defer {
+                    self.close()
+                    withExtendedLifetime(keepAlive) {}
+                }
+                do {
+                    while true {
+                        try Task.checkCancellation()
+                        guard let chunk = try self.read(upToCount: chunkSize) else { break }
+                        continuation.yield(chunk)
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
             }
-        })
-    }
-
-    private final class StreamState: @unchecked Sendable {
-        private let reader: UncachedFileReader
-        private var keepAlive: AnyObject?
-        private(set) var finished = false
-
-        init(reader: UncachedFileReader, keepAlive: AnyObject?) {
-            self.reader = reader
-            self.keepAlive = keepAlive
-        }
-
-        func finish() {
-            guard !finished else { return }
-            finished = true
-            reader.close()
-            keepAlive = nil
+            continuation.onTermination = { _ in task.cancel() }
         }
     }
 }

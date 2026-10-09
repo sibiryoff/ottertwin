@@ -106,6 +106,12 @@ class ChunkedWriter {
     private(set) var flushMode: FlushMode?
     /// The temporary file's descriptor is closed (finished or aborted).
     private(set) var isWritingFinished = false
+    /// `close` was called on the descriptor (even if it reported an error):
+    /// it is never closed twice, since its number may already be reused.
+    private var isHandleClosed = false
+    /// Whether `F_NOCACHE` could be set on the partial file (#28): its pages
+    /// are then not kept in this Mac's buffer cache.
+    let writesBypassCache: Bool
     private var isFinalized = false
 
     /// Without `replacingExisting`, an existing item at `url` makes this throw
@@ -139,8 +145,12 @@ class ChunkedWriter {
         if fcntl(fd, F_NOCACHE, 1) == -1 {
             let code = errno
             Self.logger.info("F_NOCACHE not set for partial file: errno \(code, privacy: .public)")
+            writesBypassCache = false
+        } else {
+            writesBypassCache = true
         }
-        handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        // Closed only through `closeHandle()` (or `deinit`), exactly once.
+        handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
     }
 
     func write(_ chunk: Data) throws {
@@ -158,7 +168,7 @@ class ChunkedWriter {
         // Aborted: the data is gone, there is nothing to finish.
         guard !isWritingFinished else { throw POSIXError(.EBADF) }
         let mode = try flush.flush(handle.fileDescriptor)
-        try handle.close()
+        try closeHandle()
         isWritingFinished = true
         flushMode = mode
         return mode
@@ -191,7 +201,7 @@ class ChunkedWriter {
         guard !isFinalized else { return }
         if !isWritingFinished {
             // The data is being discarded, so a failing close cannot lose anything.
-            try? handle.close()
+            try? closeHandle()
             isWritingFinished = true
         }
         if unlink(temporaryURL.path) != 0, errno != ENOENT {
@@ -200,7 +210,20 @@ class ChunkedWriter {
         }
     }
 
+    /// Closes the descriptor at most once. A failed close is not retried: the
+    /// descriptor may be released anyway, and its number reused by then.
+    private func closeHandle() throws {
+        guard !isHandleClosed else { return }
+        isHandleClosed = true
+        try handle.close()
+    }
+
     deinit {
+        if !isHandleClosed {
+            // Abandoned without finishing or aborting: release the descriptor
+            // (the partial file itself stays hidden and discardable).
+            Darwin.close(handle.fileDescriptor)
+        }
         scopedAccess?.stop()
     }
 

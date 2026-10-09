@@ -77,6 +77,20 @@ final class VerificationDurabilityTests: XCTestCase {
         return outcome
     }
 
+    private func move(_ source: URL, to destination: URL, conflict: ConflictResolution = .skip) async -> Outcome {
+        var outcome = Outcome()
+        do {
+            // Checksums off: a move must verify whenever it copies anyway.
+            for try await state in await makeService(checksumEnabled: false).move(
+                source: source, destination: destination, provider: provider, conflictResolution: conflict) {
+                outcome.states.append(state)
+            }
+        } catch {
+            outcome.error = error
+        }
+        return outcome
+    }
+
     private func partialFiles(in directory: URL) throws -> [String] {
         try fm.contentsOfDirectory(atPath: directory.path).filter(ChunkedWriter.isDiscardablePartialFileName)
     }
@@ -140,6 +154,7 @@ final class VerificationDurabilityTests: XCTestCase {
 
         XCTAssertEqual(mode, .fullFsync, "APFS supports F_FULLFSYNC")
         XCTAssertEqual(writer.flushMode, mode)
+        XCTAssertTrue(writer.writesBypassCache, "F_NOCACHE set on the partial file")
         XCTAssertTrue(writer.isWritingFinished)
         XCTAssertEqual(try writer.finishWriting(), mode, "finishing twice flushes once")
         try writer.commit()
@@ -232,5 +247,87 @@ final class VerificationDurabilityTests: XCTestCase {
         XCTAssertEqual(try flush.flush(-1), .fullFsync)
         XCTAssertEqual(calls.fullFsync, 3)
         XCTAssertEqual(calls.fsync, 0)
+    }
+
+    // MARK: - Moves that look like renames but cross volumes
+
+    /// A destination folder that is a symlink to another volume: the move must
+    /// copy, verify and only then delete the source; never a bare rename.
+    func testMoveIntoASymlinkedFolderOnAnotherVolumeIsAVerifiedCopy() async throws {
+        let volume = try makeScratchVolume(.apfs)
+        let linkedFolder = tempDir.appendingPathComponent("linked", isDirectory: true)
+        try HarnessPOSIX.symlink(volume.mountPoint.path, at: linkedFolder.path)
+        let source = try makeSource()
+        let before = try TreeSnapshot.capture(source)
+        let destination = linkedFolder.appendingPathComponent("moved.bin")
+        let atVerificationStart = provider.pauseRead(of: destination, beforeChunk: 0)
+        let operation = Task { await move(source, to: destination) }
+
+        let reached = await atVerificationStart.waitUntilReached()
+        XCTAssertTrue(reached, "the move verifies its copy")
+        XCTAssertTrue(provider.deleteCalls.isEmpty, "source not deleted before verification")
+        assertTree(source, matches: before, "source intact while verifying")
+        atVerificationStart.release()
+        let outcome = await operation.value
+
+        XCTAssertNil(outcome.error)
+        guard case .verified? = outcome.result else {
+            return XCTFail("expected .verified, got \(String(describing: outcome.states.last))")
+        }
+        XCTAssertTrue(provider.moveCalls.isEmpty, "never treated as a rename")
+        XCTAssertEqual(provider.deleteCalls, [source])
+        XCTAssertFalse(fm.fileExists(atPath: source.path))
+        assertTree(volume.mountPoint.appendingPathComponent("moved.bin"), matches: before,
+                   comparator: TreeComparator(checks: .data), "moved file intact on the other volume")
+    }
+
+    /// If the rename reports `EXDEV` (the destination is on another volume
+    /// after all), nothing was changed and the move falls back to the verified copy.
+    func testRenameThatCrossesVolumesFallsBackToAVerifiedCopy() async throws {
+        for conflict in [ConflictResolution.skip, .overwrite] {
+            let source = try makeSource("exdev-\(conflict).bin")
+            let before = try TreeSnapshot.capture(source)
+            let destination = tempDir.appendingPathComponent("moved-\(conflict).bin")
+            if conflict == .overwrite {
+                try HarnessPOSIX.writeFile(destination.path, data: Data("original".utf8))
+            }
+            provider.moveErrors = [source: POSIXError(.EXDEV)]
+
+            let outcome = await move(source, to: destination, conflict: conflict)
+
+            XCTAssertNil(outcome.error, "\(conflict)")
+            guard case .verified? = outcome.result else {
+                XCTFail("\(conflict): expected .verified, got \(String(describing: outcome.states.last))")
+                continue
+            }
+            XCTAssertEqual(provider.moveCalls.count + provider.replaceCalls.count, conflict == .overwrite ? 2 : 1,
+                           "\(conflict): one rename attempt per move so far")
+            XCTAssertEqual(provider.verificationOpens.last?.url, destination, "\(conflict)")
+            XCTAssertEqual(provider.deleteCalls.last, source, "\(conflict)")
+            XCTAssertFalse(fm.fileExists(atPath: source.path), "\(conflict)")
+            assertTree(destination, matches: before, comparator: TreeComparator(checks: .data), "\(conflict)")
+            XCTAssertEqual(try fm.contentsOfDirectory(atPath: tempDir.path).filter {
+                ChunkedWriter.isDiscardablePartialFileName($0) || ChunkedWriter.isParkedOriginalFileName($0)
+            }, [], "\(conflict): no partial or .old file left")
+        }
+    }
+
+    /// `LocalProvider.move` is a rename only: across volumes it throws `EXDEV`
+    /// and copies nothing (`FileManager.moveItem` would copy and delete).
+    func testLocalProviderMoveAcrossVolumesThrowsInsteadOfCopying() async throws {
+        let volume = try makeScratchVolume(.apfs)
+        let source = try makeSource()
+        let before = try TreeSnapshot.capture(source)
+        let destination = volume.mountPoint.appendingPathComponent("moved.bin")
+
+        do {
+            try await LocalProvider().move(from: source, to: destination)
+            XCTFail("expected EXDEV")
+        } catch {
+            XCTAssertEqual((error as? POSIXError)?.code, .EXDEV, "\(error)")
+        }
+
+        assertTree(source, matches: before, "source untouched")
+        XCTAssertFalse(fm.fileExists(atPath: destination.path), "nothing copied")
     }
 }

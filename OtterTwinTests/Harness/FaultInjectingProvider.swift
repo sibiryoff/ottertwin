@@ -57,6 +57,7 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     private var _deleteFaults: [URL: InjectedFault] = [:]
     private var _moveFaults: [URL: InjectedFault] = [:]
     private var _trashFaults: [URL: InjectedFault] = [:]
+    private var _moveErrors: [URL: Error] = [:]
     private var _readPauses: [URL: [Int: PausePoint]] = [:]
     private var _finalizeHooks: [URL: @Sendable () -> Void] = [:]
     private var _rename: AtomicRename = .system
@@ -119,6 +120,12 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     var moveFaults: [URL: InjectedFault] {
         get { locked { _moveFaults } }
         set { locked { _moveFaults = newValue } }
+    }
+    /// Keyed by the move's source: `move` and `replaceItem` throw this error
+    /// (e.g. `POSIXError(.EXDEV)`) and change nothing.
+    var moveErrors: [URL: Error] {
+        get { locked { _moveErrors } }
+        set { locked { _moveErrors = newValue } }
     }
     var trashFaults: [URL: InjectedFault] {
         get { locked { _trashFaults } }
@@ -314,21 +321,23 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     }
 
     func move(from: URL, to: URL) async throws {
-        let fault = locked { () -> InjectedFault? in
+        let (fault, moveError) = locked { () -> (InjectedFault?, Error?) in
             _moveCalls.append((from, to))
-            return Self.lookup(_moveFaults, from)
+            return (Self.lookup(_moveFaults, from), Self.lookup(_moveErrors, from))
         }
         if let fault { throw fault }
+        if let moveError { throw moveError }
         try await local.move(from: from, to: to)
     }
 
     /// Keyed by `source` for `moveFaults`, like `move`.
     func replaceItem(at destination: URL, withItemAt source: URL) async throws {
-        let (fault, rename) = locked { () -> (InjectedFault?, AtomicRename) in
+        let (fault, moveError, rename) = locked { () -> (InjectedFault?, Error?, AtomicRename) in
             _replaceCalls.append((source, destination))
-            return (Self.lookup(_moveFaults, source), _rename)
+            return (Self.lookup(_moveFaults, source), Self.lookup(_moveErrors, source), _rename)
         }
         if let fault { throw fault }
+        if let moveError { throw moveError }
         try rename.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination), swapping: false)
     }
 

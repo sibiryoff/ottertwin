@@ -10,7 +10,9 @@ import Observation
 ///   the run ends only after that cleanup, and files not yet started are not
 ///   started at all.
 /// - The sheet stays presented after the run ends, showing the final state
-///   (`complete`, `failed` or `cancelled`) until the user dismisses it.
+///   (`complete`, `partiallyComplete`, `failed` or `cancelled`) until the user
+///   dismisses it. `partiallyComplete` (#28) is not a failure: e.g. a move
+///   whose verified copy is kept while its source could not be removed.
 @MainActor
 @Observable
 final class OperationRunner {
@@ -105,8 +107,9 @@ final class OperationRunner {
         }
     }
 
-    /// Runs one operation; returns its final state (`.complete`, `.failed` or
-    /// `.cancelled`) once it has finished, including any cleanup.
+    /// Runs one operation; returns its final state (`.complete`,
+    /// `.partiallyComplete`, `.failed` or `.cancelled`) once it has finished,
+    /// including any cleanup.
     private nonisolated static func perform(
         _ kind: OperationKind,
         source: URL,

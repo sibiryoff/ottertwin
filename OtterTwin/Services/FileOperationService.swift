@@ -74,42 +74,59 @@ actor FileOperationService {
             }
 
             if sameVolume {
-                try await self.performSameVolumeMove(source: source, target: target, provider: provider)
-                onState(.complete(result: .renamed))
-            } else {
-                // The source is deleted below, so the copy must be verified.
-                let result = try await self.performCopy(
-                    source: source, target: target,
-                    provider: provider, alwaysVerify: true, onState: onState
-                )
-                let dest = target.url
-                // Last point to cancel: the source has not been touched yet.
-                if Task.isCancelled {
-                    if target.replacesExisting {
-                        // The verified copy has already replaced the original
-                        // destination, which is gone: removing the copy would
-                        // leave neither. Keep it; the source stays untouched.
-                        Self.logger.warning("Move cancelled after its copy replaced the destination; the copy is kept and the source is not deleted")
-                    } else {
-                        // Remove the copy we just made so a cancelled move
-                        // leaves the file system as it was.
-                        await self.removeIncompleteDestination(dest, provider: provider, reason: "move cancelled before source delete")
-                    }
-                    throw OperationError.cancelled
-                }
                 do {
-                    try await provider.delete(source)
-                } catch {
-                    // The destination is a verified copy: keep it (removing it
-                    // could lose data if the source is partly gone) and report
-                    // a partial success instead of a failure.
-                    Self.logger.error("Move copied and verified \(dest.lastPathComponent, privacy: .private), but the source could not be removed: \(error.localizedDescription, privacy: .private)")
-                    onState(.partiallyComplete(result: result, issue: .sourceNotRemoved(error)))
+                    try await self.performSameVolumeMove(source: source, target: target, provider: provider)
+                    onState(.complete(result: .renamed))
                     return
+                } catch where Self.isCrossDeviceError(error) {
+                    // The rename found the destination on another volume after
+                    // all (`EXDEV`; nothing was changed): move it the verified way.
+                    Self.logger.info("Rename crossed volumes; moving by verified copy instead")
                 }
-                onState(.complete(result: result))
             }
+            try await self.performCrossVolumeMove(source: source, target: target,
+                                                  provider: provider, onState: onState)
         }
+    }
+
+    /// Copy, always verify, then delete the source (see `move(…onState:)`).
+    private func performCrossVolumeMove(
+        source: URL,
+        target: Target,
+        provider: any VFSProvider,
+        onState: StateHandler
+    ) async throws {
+        // The source is deleted below, so the copy must be verified.
+        let result = try await performCopy(
+            source: source, target: target,
+            provider: provider, alwaysVerify: true, onState: onState
+        )
+        let dest = target.url
+        // Last point to cancel: the source has not been touched yet.
+        if Task.isCancelled {
+            if target.replacesExisting {
+                // The verified copy has already replaced the original
+                // destination, which is gone: removing the copy would
+                // leave neither. Keep it; the source stays untouched.
+                Self.logger.warning("Move cancelled after its copy replaced the destination; the copy is kept and the source is not deleted")
+            } else {
+                // Remove the copy we just made so a cancelled move
+                // leaves the file system as it was.
+                await removeIncompleteDestination(dest, provider: provider, reason: "move cancelled before source delete")
+            }
+            throw OperationError.cancelled
+        }
+        do {
+            try await provider.delete(source)
+        } catch {
+            // The destination is a verified copy: keep it (removing it
+            // could lose data if the source is partly gone) and report
+            // a partial success instead of a failure.
+            Self.logger.error("Move copied and verified \(dest.lastPathComponent, privacy: .private), but the source could not be removed: \(error.localizedDescription, privacy: .private)")
+            onState(.partiallyComplete(result: result, issue: .sourceNotRemoved(error)))
+            return
+        }
+        onState(.complete(result: result))
     }
 
     /// Stream form of `copy(…onState:)`. Ending the iteration early, or
@@ -303,7 +320,9 @@ actor FileOperationService {
 
         do {
             let read = try provider.openForVerification(copy, chunkSize: chunkSize)
-            cacheBypassed = read.cacheBypassed
+            // Bypassed only if neither the written pages nor the read went
+            // through this Mac's buffer cache.
+            cacheBypassed = writer.writesBypassCache && read.cacheBypassed
             for try await chunk in read.chunks {
                 try Task.checkCancellation()
                 destHasher.update(data: chunk)
@@ -474,16 +493,30 @@ actor FileOperationService {
 
     // MARK: - Private helpers
 
-    private func isSameVolume(_ a: URL, _ b: URL) -> Bool {
-        guard let va = Self.volumeIdentifier(for: a),
-              let vb = Self.volumeIdentifier(for: b.deletingLastPathComponent()) else {
+    /// Whether moving `source` to `destination` can be a rename (#28). The
+    /// source item itself is checked with `lstat` (a symlink is moved, not its
+    /// target); the destination folder with `stat`, which follows symlinks, so
+    /// a folder that links to another volume counts as that volume. Unknown →
+    /// false (the verified copy path). The rename itself also refuses to cross
+    /// volumes (`EXDEV`), see `move(…onState:)`.
+    private func isSameVolume(_ source: URL, _ destination: URL) -> Bool {
+        var sourceInfo = stat(), folderInfo = stat()
+        guard lstat(source.path, &sourceInfo) == 0,
+              stat(destination.deletingLastPathComponent().path, &folderInfo) == 0 else {
             return false
         }
-        return va == vb
+        return sourceInfo.st_dev == folderInfo.st_dev
     }
 
-    private static func volumeIdentifier(for url: URL) -> NSNumber? {
-        try? FileManager.default.attributesOfItem(atPath: url.path)[.systemNumber] as? NSNumber
+    /// `EXDEV`: a rename between two volumes.
+    private static func isCrossDeviceError(_ error: Error) -> Bool {
+        if let posix = error as? POSIXError { return posix.code == .EXDEV }
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain { return nsError.code == Int(EXDEV) }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return underlying.domain == NSPOSIXErrorDomain && underlying.code == Int(EXDEV)
+        }
+        return false
     }
 
     /// Whether anything is at `url`, without following symlinks: a dangling

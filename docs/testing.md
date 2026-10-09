@@ -75,6 +75,7 @@ A `VFSProvider` that does real work through `LocalProvider` and injects faults b
 | `corruptions[url] = N` | silent corruption: the written byte at `N` is flipped (XOR 0xFF) |
 | `closeFaults[url]` | finishing the file (`finishWriting()`, also via `close()`) throws before finalizing; the data stays in the writer's temporary file until `abort()` |
 | `deleteFaults[url]`, `moveFaults[source]`, `trashFaults[url]` | the call throws and changes nothing (`moveFaults` also apply to `replaceItem`) |
+| `moveErrors[source] = POSIXError(.EXDEV)` | `move`/`replaceItem` throw that error and change nothing (e.g. a rename that turns out to cross volumes) |
 | `pauseRead(of: url, beforeChunk: k)` | returns a `PausePoint`; the read stops right before chunk `k` |
 | `finalizeHooks[url] = { … }` | runs synchronously in the writing task right after a writer for `url` committed (moved its file into place), e.g. to cancel that task with `withUnsafeCurrentTask` |
 | `rename = .withoutRenameFlags(intercept:)` | writers and `replaceItem` finalize as on smbfs/ExFAT (no `RENAME_EXCL`/`RENAME_SWAP`), so the fallback runs on APFS too; `intercept` can fail or act around each plain rename |
@@ -168,13 +169,19 @@ A copy is verified like this:
 2. Verification opens the file again (`VFSProvider.openForVerification`, `UncachedFileReader`):
    a new descriptor with `F_NOCACHE`, and hashes what it reads.
 3. `VerificationResult.verified` records `flushMode` (`.fullFsync` or `.fsync`) and
-   `cacheBypassed` (whether `F_NOCACHE` was set on the verification descriptor), for the summary and
-   report (#11, #13).
+   `cacheBypassed` (true only if `F_NOCACHE` was set both on the partial file while writing and on
+   the verification descriptor), for the summary and report (#11, #13).
 
 Moves: a cross-volume move always verifies, even when checksums are off in Settings, because it
 deletes the source. If deleting the source fails after a verified copy, the copy is kept and the
 move ends `.partiallyComplete(result:, issue: .sourceNotRemoved(error))`, not as a failure. A
 same-volume move is an atomic rename (`.renamed`): the data is not rewritten, so nothing is hashed.
+"Same volume" compares the source item (`lstat`, a symlink is moved, not its target) with the
+destination folder (`stat`, so a folder that is a symlink to another volume counts as that volume).
+`LocalProvider.move` is a pure rename (`AtomicRename.moveExclusively`), never
+`FileManager.moveItem`, which silently copies and deletes across volumes: a rename between volumes
+fails with `EXDEV`, and the move then falls back to the verified copy (nothing was changed by the
+failed rename).
 
 Limits (not something the client can fix):
 
