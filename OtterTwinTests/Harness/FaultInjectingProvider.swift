@@ -1,0 +1,345 @@
+import Foundation
+@testable import OtterTwin
+
+/// The error every injected fault throws (unless a test passes its own).
+struct InjectedFault: Error, LocalizedError, Equatable {
+    let message: String
+    var errorDescription: String? { message }
+}
+
+/// A fault that fires once the byte stream of one file reaches `offset`.
+struct ByteFault {
+    /// Bytes `0..<offset` get through; the fault fires on the first byte at `offset`.
+    let offset: Int64
+    var error = InjectedFault(message: "Injected I/O fault")
+}
+
+// MARK: - FaultInjectingProvider
+
+/// Data-safety harness (#24): a `VFSProvider` that performs real operations
+/// through `LocalProvider` and injects deterministic faults per path:
+///
+/// - read fault at byte N, write fault at byte N, silent corruption (one byte
+///   flipped in the written data), close fault, delete / move / trash faults;
+/// - pause points before the k-th chunk read of a file, so a test can act
+///   (e.g. cancel) exactly during the copy or exactly during verification.
+///
+/// Reads are pull-based: a chunk is only read when the consumer asks for it, so
+/// at a pause point before chunk k the consumer has processed exactly k chunks.
+///
+/// "Trash" is simulated by moving items into a test-owned folder, so nothing
+/// ever leaves the test's temp directory. Faults match on the standardized path.
+final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
+    private let local = LocalProvider()
+    private let fakeTrash: URL
+    private let lock = NSLock()
+
+    private var _supportsTrash: Bool
+    private var _managedRoot: URL?
+    private var _readFaults: [URL: ByteFault] = [:]
+    private var _writeFaults: [URL: ByteFault] = [:]
+    private var _corruptions: [URL: Int64] = [:]
+    private var _closeFaults: [URL: InjectedFault] = [:]
+    private var _deleteFaults: [URL: InjectedFault] = [:]
+    private var _moveFaults: [URL: InjectedFault] = [:]
+    private var _trashFaults: [URL: InjectedFault] = [:]
+    private var _readPauses: [URL: [Int: PausePoint]] = [:]
+    private var _trashCalls: [URL] = []
+    private var _deleteCalls: [URL] = []
+    private var _moveCalls: [(from: URL, to: URL)] = []
+    private var _readCalls: [URL] = []
+    private var _writerCalls: [URL] = []
+    private var _bytesDelivered: [String: Int64] = [:]
+
+    init(fakeTrash: URL, supportsTrash: Bool = true) {
+        self.fakeTrash = fakeTrash
+        self._supportsTrash = supportsTrash
+    }
+
+    private func locked<T>(_ body: () -> T) -> T { lock.withLock(body) }
+
+    // MARK: Configuration
+
+    var supportsTrash: Bool {
+        get { locked { _supportsTrash } }
+        set { locked { _supportsTrash = newValue } }
+    }
+    /// When set, the provider only manages paths inside this root (like a mounted share).
+    var managedRoot: URL? {
+        get { locked { _managedRoot } }
+        set { locked { _managedRoot = newValue } }
+    }
+    /// Reading the file yields bytes `0..<offset`, then the stream throws.
+    var readFaults: [URL: ByteFault] {
+        get { locked { _readFaults } }
+        set { locked { _readFaults = newValue } }
+    }
+    /// Writing the file stores bytes `0..<offset`, then `write` throws (and keeps throwing).
+    var writeFaults: [URL: ByteFault] {
+        get { locked { _writeFaults } }
+        set { locked { _writeFaults = newValue } }
+    }
+    /// Silent corruption: the written byte at this offset is XOR-ed with 0xFF; nothing throws.
+    var corruptions: [URL: Int64] {
+        get { locked { _corruptions } }
+        set { locked { _corruptions = newValue } }
+    }
+    /// `close()` closes the handle (data already written stays) and then throws.
+    var closeFaults: [URL: InjectedFault] {
+        get { locked { _closeFaults } }
+        set { locked { _closeFaults = newValue } }
+    }
+    var deleteFaults: [URL: InjectedFault] {
+        get { locked { _deleteFaults } }
+        set { locked { _deleteFaults = newValue } }
+    }
+    /// Keyed by the move's source.
+    var moveFaults: [URL: InjectedFault] {
+        get { locked { _moveFaults } }
+        set { locked { _moveFaults = newValue } }
+    }
+    var trashFaults: [URL: InjectedFault] {
+        get { locked { _trashFaults } }
+        set { locked { _trashFaults = newValue } }
+    }
+
+    /// Returns a pause point that holds the next read of `url` right before its
+    /// `chunkIndex`-th chunk (0-based) is read, in every read stream of `url`.
+    @discardableResult
+    func pauseRead(of url: URL, beforeChunk chunkIndex: Int) -> PausePoint {
+        let pause = PausePoint()
+        locked { _readPauses[url, default: [:]][chunkIndex] = pause }
+        return pause
+    }
+
+    // MARK: Recorded calls
+
+    var trashCalls: [URL] { locked { _trashCalls } }
+    var deleteCalls: [URL] { locked { _deleteCalls } }
+    var moveCalls: [(from: URL, to: URL)] { locked { _moveCalls } }
+    var readCalls: [URL] { locked { _readCalls } }
+    var writerCalls: [URL] { locked { _writerCalls } }
+    /// Bytes delivered so far by read streams of `url` (all streams combined).
+    func bytesDelivered(from url: URL) -> Int64 { locked { _bytesDelivered[Self.key(url)] ?? 0 } }
+
+    // MARK: VFSProvider
+
+    func listDirectory(_ url: URL) async throws -> [FileItem] { try await local.listDirectory(url) }
+    func attributes(of url: URL) async throws -> FileItem { try await local.attributes(of: url) }
+    func createDirectory(at url: URL) async throws { try await local.createDirectory(at: url) }
+
+    func readChunks(of url: URL, chunkSize: Int) -> AsyncThrowingStream<Data, Error> {
+        let (fault, pauses) = locked { () -> (ByteFault?, [Int: PausePoint]) in
+            _readCalls.append(url)
+            return (Self.lookup(_readFaults, url), Self.lookup(_readPauses, url) ?? [:])
+        }
+        let state = ReadState(inner: local.readChunks(of: url, chunkSize: chunkSize))
+        let key = Self.key(url)
+        return AsyncThrowingStream(unfolding: { [self] in
+            if let pending = state.pendingError {
+                state.pendingError = nil
+                state.finished = true
+                throw pending
+            }
+            if state.finished { return nil }
+            if let pause = pauses[state.chunkIndex] {
+                await pause.arrive()
+            }
+            try Task.checkCancellation()
+            guard var chunk = try await state.iterator.next() else {
+                state.finished = true
+                return nil
+            }
+            if let fault, state.offset + Int64(chunk.count) > fault.offset {
+                let keep = Int(max(0, fault.offset - state.offset))
+                guard keep > 0 else {
+                    state.finished = true
+                    throw fault.error
+                }
+                chunk = chunk.prefix(keep)
+                state.pendingError = fault.error
+            }
+            state.offset += Int64(chunk.count)
+            state.chunkIndex += 1
+            let count = Int64(chunk.count)
+            self.locked { self._bytesDelivered[key, default: 0] += count }
+            return chunk
+        })
+    }
+
+    func makeWriter(at url: URL) throws -> ChunkedWriter {
+        let faults = locked { () -> FaultInjectingWriter.Faults in
+            _writerCalls.append(url)
+            return FaultInjectingWriter.Faults(
+                write: Self.lookup(_writeFaults, url),
+                corruptAt: Self.lookup(_corruptions, url),
+                close: Self.lookup(_closeFaults, url)
+            )
+        }
+        return try FaultInjectingWriter(url: url, faults: faults)
+    }
+
+    func delete(_ url: URL) async throws {
+        let fault = locked { () -> InjectedFault? in
+            _deleteCalls.append(url)
+            return Self.lookup(_deleteFaults, url)
+        }
+        if let fault { throw fault }
+        try await local.delete(url)
+    }
+
+    func move(from: URL, to: URL) async throws {
+        let fault = locked { () -> InjectedFault? in
+            _moveCalls.append((from, to))
+            return Self.lookup(_moveFaults, from)
+        }
+        if let fault { throw fault }
+        try await local.move(from: from, to: to)
+    }
+
+    @discardableResult
+    func trash(_ url: URL) async throws -> URL? {
+        let (supported, fault) = locked { () -> (Bool, InjectedFault?) in
+            _trashCalls.append(url)
+            return (_supportsTrash, Self.lookup(_trashFaults, url))
+        }
+        guard supported else { throw TrashNotSupportedError() }
+        if let fault { throw fault }
+        try FileManager.default.createDirectory(at: fakeTrash, withIntermediateDirectories: true)
+        let target = fakeTrash.appendingPathComponent(UUID().uuidString + "-" + url.lastPathComponent)
+        try FileManager.default.moveItem(at: url, to: target)
+        return target
+    }
+
+    func manages(_ url: URL) -> Bool {
+        guard let managedRoot else { return true }
+        return url.isContained(in: managedRoot)
+    }
+
+    // MARK: Helpers
+
+    private static func key(_ url: URL) -> String { url.standardizedFileURL.path }
+
+    private static func lookup<V>(_ table: [URL: V], _ url: URL) -> V? {
+        if let exact = table[url] { return exact }
+        let wanted = key(url)
+        return table.first { key($0.key) == wanted }?.value
+    }
+
+    /// Mutable state of one pull-based read stream. Only touched by the
+    /// stream's consumer, one `next()` at a time.
+    private final class ReadState: @unchecked Sendable {
+        var iterator: AsyncThrowingStream<Data, Error>.Iterator
+        var offset: Int64 = 0
+        var chunkIndex = 0
+        var pendingError: Error?
+        var finished = false
+
+        init(inner: AsyncThrowingStream<Data, Error>) {
+            iterator = inner.makeAsyncIterator()
+        }
+    }
+}
+
+// MARK: - FaultInjectingWriter
+
+/// `ChunkedWriter` that writes through to the real file and injects the
+/// faults it was created with. Offsets are absolute positions in the file.
+final class FaultInjectingWriter: ChunkedWriter {
+    struct Faults {
+        var write: ByteFault?
+        var corruptAt: Int64?
+        var close: InjectedFault?
+    }
+
+    private let faults: Faults
+    private var offset: Int64 = 0
+    private var isClosed = false
+
+    init(url: URL, faults: Faults) throws {
+        self.faults = faults
+        try super.init(url: url)
+    }
+
+    override func write(_ chunk: Data) throws {
+        var chunk = chunk
+        let count = Int64(chunk.count)
+        if let corruptAt = faults.corruptAt, corruptAt >= offset, corruptAt < offset + count {
+            let index = chunk.startIndex + Int(corruptAt - offset)
+            chunk[index] ^= 0xFF
+        }
+        if let fault = faults.write, offset + count > fault.offset {
+            let keep = Int(max(0, fault.offset - offset))
+            if keep > 0 {
+                try super.write(chunk.prefix(keep))
+                offset += Int64(keep)
+            }
+            throw fault.error
+        }
+        try super.write(chunk)
+        offset += count
+    }
+
+    override func close() throws {
+        if let fault = faults.close {
+            abort()
+            throw fault
+        }
+        try super.close()
+        isClosed = true
+    }
+
+    override func abort() {
+        guard !isClosed else { return }
+        isClosed = true
+        super.abort()
+    }
+}
+
+// MARK: - PausePoint
+
+/// A deterministic rendezvous between the provider (which `arrive()`s and
+/// waits) and a test (which waits until the point is reached, acts, then
+/// `release()`s it). Continuation-based: nothing runs past the point until
+/// `release()` is called.
+final class PausePoint: @unchecked Sendable {
+    private let lock = NSLock()
+    private var reached = false
+    private var released = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    var isReached: Bool { lock.withLock { reached } }
+
+    /// Provider side: marks the point reached and suspends until released.
+    func arrive() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let resumeNow = lock.withLock { () -> Bool in
+                reached = true
+                if released { return true }
+                waiter = continuation
+                return false
+            }
+            if resumeNow { continuation.resume() }
+        }
+    }
+
+    /// Test side: lets the provider continue. Safe to call more than once.
+    func release() {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            released = true
+            defer { waiter = nil }
+            return waiter
+        }
+        continuation?.resume()
+    }
+
+    /// Test side: waits until the provider has arrived. Returns false on timeout.
+    func waitUntilReached(timeout: TimeInterval = 30) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !isReached {
+            if Date() >= deadline { return false }
+            try? await Task.sleep(nanoseconds: 5_000_000)  // test polling; the deadline bounds the wait
+        }
+        return true
+    }
+}

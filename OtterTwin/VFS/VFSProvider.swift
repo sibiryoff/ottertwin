@@ -38,7 +38,11 @@ struct TrashNotSupportedError: Error, LocalizedError {
 // MARK: - ChunkedWriter
 
 /// A write sink that accepts successive Data chunks and finalises on close().
-final class ChunkedWriter {
+///
+/// Test hook (#24): deliberately not `final`, so the data-safety harness
+/// (`FaultInjectingWriter` in OtterTwinTests) can subclass it to inject write,
+/// corruption and close faults. Production code never subclasses it.
+class ChunkedWriter {
     private let handle: FileHandle
     private let url: URL
     private let scopedAccess: ScopedAccess?
