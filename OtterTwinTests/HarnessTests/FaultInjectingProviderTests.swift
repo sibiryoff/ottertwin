@@ -271,6 +271,27 @@ final class FaultInjectingProviderTests: XCTestCase {
         XCTAssertEqual(received, data)
     }
 
+    func testPausedReadHasNotReadAhead() async throws {
+        let (url, data) = try makeFile("no-read-ahead.bin", size: 10_000)
+        let pause = provider.pauseRead(of: url, beforeChunk: 2)
+        let reader = Task { await readAll(url, chunkSize: 1_000) }
+        let reached = await pause.waitUntilReached()
+        XCTAssertTrue(reached)
+
+        // Change the not-yet-read part of the file while the read is paused.
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seek(toOffset: 2_000)
+        try handle.write(contentsOf: Data(repeating: 0xEE, count: 8_000))
+        try handle.close()
+        pause.release()
+
+        let (received, error) = await reader.value
+        XCTAssertNil(error)
+        XCTAssertEqual(received.prefix(2_000), data.prefix(2_000))
+        XCTAssertEqual(received.suffix(from: 2_000), Data(repeating: 0xEE, count: 8_000),
+                       "bytes after the pause are read from disk only after release")
+    }
+
     func testCancellingWhilePausedStopsTheRead() async throws {
         let (url, _) = try makeFile("cancelled.bin", size: 10_000)
         let pause = provider.pauseRead(of: url, beforeChunk: 3)

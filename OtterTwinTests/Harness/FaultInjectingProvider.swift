@@ -24,8 +24,9 @@ struct ByteFault {
 /// - pause points before the k-th chunk read of a file, so a test can act
 ///   (e.g. cancel) exactly during the copy or exactly during verification.
 ///
-/// Reads are pull-based: a chunk is only read when the consumer asks for it, so
-/// at a pause point before chunk k the consumer has processed exactly k chunks.
+/// Reads are pull-based and do their own I/O (opened on the first pull, one
+/// chunk read per pull, no read-ahead): at a pause point before chunk k the
+/// consumer has processed exactly k chunks and no further byte has been read.
 ///
 /// "Trash" is simulated by moving items into a test-owned folder, so nothing
 /// ever leaves the test's temp directory. Faults match on the standardized path.
@@ -133,7 +134,7 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
             _readCalls.append(url)
             return (Self.lookup(_readFaults, url), Self.lookup(_readPauses, url) ?? [:])
         }
-        let state = ReadState(inner: local.readChunks(of: url, chunkSize: chunkSize))
+        let state = ReadState(url: url, chunkSize: chunkSize)
         let key = Self.key(url)
         return AsyncThrowingStream(unfolding: { [self] in
             if let pending = state.pendingError {
@@ -145,8 +146,20 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
             if let pause = pauses[state.chunkIndex] {
                 await pause.arrive()
             }
-            try Task.checkCancellation()
-            guard var chunk = try await state.iterator.next() else {
+            do {
+                try Task.checkCancellation()
+            } catch {
+                state.finished = true
+                throw error
+            }
+            let next: Data?
+            do {
+                next = try state.readNextChunk()
+            } catch {
+                state.finished = true
+                throw error
+            }
+            guard var chunk = next else {
                 state.finished = true
                 return nil
             }
@@ -227,17 +240,38 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     }
 
     /// Mutable state of one pull-based read stream. Only touched by the
-    /// stream's consumer, one `next()` at a time.
+    /// stream's consumer, one `next()` at a time. The file is opened on the
+    /// first pull and read one chunk per pull, so nothing is read ahead of the
+    /// consumer (unlike `LocalProvider.readChunks`, which buffers ahead).
     private final class ReadState: @unchecked Sendable {
-        var iterator: AsyncThrowingStream<Data, Error>.Iterator
+        let url: URL
+        let chunkSize: Int
+        private var handle: FileHandle?
         var offset: Int64 = 0
         var chunkIndex = 0
         var pendingError: Error?
-        var finished = false
-
-        init(inner: AsyncThrowingStream<Data, Error>) {
-            iterator = inner.makeAsyncIterator()
+        var finished = false {
+            didSet { if finished { closeHandle() } }
         }
+
+        init(url: URL, chunkSize: Int) {
+            self.url = url
+            self.chunkSize = chunkSize
+        }
+
+        /// Same calls as `LocalProvider.readChunks`; nil at end of file.
+        func readNextChunk() throws -> Data? {
+            if handle == nil { handle = try FileHandle(forReadingFrom: url) }
+            let chunk = try handle?.read(upToCount: chunkSize) ?? Data()
+            return chunk.isEmpty ? nil : chunk
+        }
+
+        private func closeHandle() {
+            try? handle?.close()  // read-only handle; nothing to flush, a close error cannot lose data
+            handle = nil
+        }
+
+        deinit { closeHandle() }
     }
 }
 

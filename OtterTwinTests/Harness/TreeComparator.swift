@@ -170,9 +170,10 @@ struct TreeComparator {
                 report(.symlinkTarget, "expected → \(Self.text(want.symlinkTarget)), got → \(Self.text(have.symlinkTarget))")
             }
             if checks.contains(.mtime) {
-                let delta = abs(Self.seconds(want.mtime) - Self.seconds(have.mtime))
-                if delta > mtimeTolerance {
-                    report(.mtime, "differs by \(delta) s (tolerance \(mtimeTolerance) s)")
+                // Integer nanoseconds: a Double of epoch seconds cannot hold nanosecond steps.
+                let delta = Self.nanoseconds(want.mtime) - Self.nanoseconds(have.mtime)
+                if delta.magnitude > UInt64(max(0, (mtimeTolerance * 1_000_000_000).rounded())) {
+                    report(.mtime, "differs by \(delta) ns (tolerance \(mtimeTolerance) s)")
                 }
             }
             if want.type != .symlink, checks.contains(.permissions), want.permissions != have.permissions {
@@ -189,8 +190,8 @@ struct TreeComparator {
         return differences
     }
 
-    private static func seconds(_ time: timespec) -> Double {
-        Double(time.tv_sec) + Double(time.tv_nsec) / 1_000_000_000
+    private static func nanoseconds(_ time: timespec) -> Int64 {
+        Int64(time.tv_sec) * 1_000_000_000 + Int64(time.tv_nsec)
     }
 
     private static func text(_ bytes: [UInt8]?) -> String {

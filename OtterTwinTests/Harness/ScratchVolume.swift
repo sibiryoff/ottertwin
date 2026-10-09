@@ -64,7 +64,11 @@ final class ScratchVolume {
             return ScratchVolume(fileSystem: fileSystem, workDirectory: work, imageURL: image,
                                  mountPoint: URL(fileURLWithPath: mount, isDirectory: true), deviceEntry: device)
         } catch {
-            try? FileManager.default.removeItem(at: work)  // best-effort cleanup of a half-made image; the original error is rethrown
+            // Never leave a half-made image attached: if attach succeeded but its
+            // output was unusable, find the image in `hdiutil info` and detach it.
+            // Best effort; the original error is rethrown either way.
+            try? detachAll(attachedFrom: image)
+            try? FileManager.default.removeItem(at: work)
             throw error
         }
     }
@@ -130,6 +134,23 @@ final class ScratchVolume {
             throw HarnessError(description: "hdiutil \(arguments.first ?? "") failed (\(process.terminationStatus)): \(message)")
         }
         return output
+    }
+
+    /// Detaches every device `hdiutil info` lists for the image at `image`.
+    private static func detachAll(attachedFrom image: URL) throws {
+        let output = try run(["info", "-plist"])
+        guard let plist = try PropertyListSerialization.propertyList(from: output, format: nil) as? [String: Any],
+              let images = plist["images"] as? [[String: Any]] else { return }
+        let wanted = image.resolvingSymlinksInPath().path
+        for entry in images {
+            guard let path = entry["image-path"] as? String,
+                  URL(fileURLWithPath: path).resolvingSymlinksInPath().path == wanted,
+                  let entities = entry["system-entities"] as? [[String: Any]],
+                  let device = entities.compactMap({ $0["dev-entry"] as? String })
+                    .first(where: { $0.range(of: #"^/dev/disk[0-9]+$"#, options: .regularExpression) != nil })
+            else { continue }
+            try run(["detach", device, "-force"])
+        }
     }
 
     private static func parseAttach(_ output: Data) throws -> (device: String, mountPoint: String) {
