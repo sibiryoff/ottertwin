@@ -100,7 +100,7 @@ final class CopyMoveCharacterizationTests: XCTestCase {
 
     /// The source must be exactly as before the operation (all checks, including mtime).
     private func assertUnchanged(_ before: TreeSnapshot, file: StaticString = #filePath, line: UInt = #line) throws {
-        assertSnapshot(try snapshot(before.root), matches: before, "source changed", file: file, line: line)
+        assertTreeSnapshot(try snapshot(before.root), matches: before, "source changed", file: file, line: line)
     }
 
     private func dataDifferences(_ expected: URL, _ actual: URL) throws -> [TreeDifference] {
@@ -362,19 +362,19 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         let copied = try snapshot(destination)
         let nfcName = FixtureTree.Path.nfcName
         // Guarantee today: every visible file and folder, byte-exact, including NFD, emoji and long names.
-        assertSnapshot(copied, matches: before,
+        assertTreeSnapshot(copied, matches: before,
                        comparator: TreeComparator(checks: .data, excluding: { TreeComparator.isHidden($0) || $0 == nfcName }))
         XCTExpectFailure("#9: copyDirectory skips hidden files and folders", options: .treeDifferencesOnly) {
-            assertSnapshot(copied, matches: before,
+            assertTreeSnapshot(copied, matches: before,
                            comparator: TreeComparator(checks: [.presence], excluding: { !TreeComparator.isHidden($0) }))
         }
         XCTExpectFailure("#48: copyDirectory rewrites an NFC file name to NFD", options: .treeDifferencesOnly) {
-            assertSnapshot(copied, matches: before,
+            assertTreeSnapshot(copied, matches: before,
                            comparator: TreeComparator(checks: .data, excluding: { !$0.hasPrefix("unicode/nfc/") }))
         }
         for check in [TreeComparator.Checks.mtime, .permissions, .xattrs] {
             XCTExpectFailure("#30: folder copies do not preserve metadata (check \(check.rawValue))", options: .treeDifferencesOnly) {
-                assertSnapshot(copied, matches: before, comparator: TreeComparator(checks: check, excluding: TreeComparator.isHidden))
+                assertTreeSnapshot(copied, matches: before, comparator: TreeComparator(checks: check, excluding: TreeComparator.isHidden))
             }
         }
     }
@@ -412,12 +412,12 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         XCTAssertTrue(outcome.isVerified)
         XCTAssertFalse(fm.fileExists(atPath: source.path), "source removed after a verified copy")
         let moved = try snapshot(destination)
-        assertSnapshot(moved, matches: before, comparator: TreeComparator(checks: .data))
+        assertTreeSnapshot(moved, matches: before, comparator: TreeComparator(checks: .data))
         XCTExpectFailure("#30: cross-volume moves do not preserve mtime", options: .treeDifferencesOnly) {
-            assertSnapshot(moved, matches: before, comparator: TreeComparator(checks: .mtime))
+            assertTreeSnapshot(moved, matches: before, comparator: TreeComparator(checks: .mtime))
         }
         XCTExpectFailure("#30: cross-volume moves do not preserve permissions", options: .treeDifferencesOnly) {
-            assertSnapshot(moved, matches: before, comparator: TreeComparator(checks: .permissions))
+            assertTreeSnapshot(moved, matches: before, comparator: TreeComparator(checks: .permissions))
         }
     }
 

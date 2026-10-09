@@ -247,7 +247,7 @@ extension XCTestCase {
 
     /// Compares two snapshots; one failure lists every difference. A harness error
     /// is reported as "Tree comparison failed", never as a tree difference.
-    func assertSnapshot(
+    func assertTreeSnapshot(
         _ actual: TreeSnapshot, matches expected: TreeSnapshot, comparator: TreeComparator = TreeComparator(),
         _ message: String = "", file: StaticString = #filePath, line: UInt = #line
     ) {

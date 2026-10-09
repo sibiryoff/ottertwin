@@ -42,15 +42,12 @@ final class FixtureTreeTests: XCTestCase {
         typealias P = FixtureTree.Path
 
         func st(_ relativePath: String) throws -> stat { try HarnessPOSIX.lstat(tree.path(relativePath)) }
-        func isType(_ relativePath: String, _ type: mode_t) throws -> Bool {
-            let mode = try HarnessPOSIX.lstat(tree.path(relativePath)).st_mode
-            return mode & S_IFMT == type
-        }
+        func isType(_ info: stat, _ fileType: mode_t) -> Bool { info.st_mode & S_IFMT == fileType }
 
         // Nested directories, depth ≥ 5, and empty directories.
         XCTAssertGreaterThanOrEqual(P.deepDirectory.split(separator: "/").count, 5)
-        XCTAssertTrue(try isType(P.deepDirectory, S_IFDIR))
-        XCTAssertTrue(try isType(P.deepFile, S_IFREG))
+        XCTAssertTrue(isType(try st(P.deepDirectory), S_IFDIR))
+        XCTAssertTrue(isType(try st(P.deepFile), S_IFREG))
         XCTAssertEqual(try HarnessPOSIX.directoryEntries(tree.path(P.emptyDirectory)), [])
         XCTAssertEqual(try HarnessPOSIX.directoryEntries(tree.path(P.nestedEmptyDirectory)), [])
 
@@ -70,10 +67,10 @@ final class FixtureTreeTests: XCTestCase {
         }
 
         // Hidden file and hidden directory.
-        XCTAssertTrue(try isType(P.dotfile, S_IFREG))
-        XCTAssertTrue(try isType(P.hiddenDirectory, S_IFDIR))
-        XCTAssertTrue(try isType(P.hiddenDirectoryFile, S_IFREG))
-        XCTAssertTrue(try isType(P.hiddenInHiddenDirectory, S_IFREG))
+        XCTAssertTrue(isType(try st(P.dotfile), S_IFREG))
+        XCTAssertTrue(isType(try st(P.hiddenDirectory), S_IFDIR))
+        XCTAssertTrue(isType(try st(P.hiddenDirectoryFile), S_IFREG))
+        XCTAssertTrue(isType(try st(P.hiddenInHiddenDirectory), S_IFREG))
 
         // Unicode names stored byte-exactly in NFC and NFD form.
         let nfc = Array("caf\u{00E9}.txt".utf8)
@@ -83,14 +80,14 @@ final class FixtureTreeTests: XCTestCase {
         XCTAssertEqual(try HarnessPOSIX.directoryEntries(tree.path("unicode/nfd")), [nfd])
 
         // Spaces, emoji, 255-byte name.
-        XCTAssertTrue(try isType(P.spaces, S_IFREG))
-        XCTAssertTrue(try isType(P.emoji, S_IFREG))
+        XCTAssertTrue(isType(try st(P.spaces), S_IFREG))
+        XCTAssertTrue(isType(try st(P.emoji), S_IFREG))
         XCTAssertEqual(P.longName.utf8.count, 255)
-        XCTAssertTrue(try isType(P.longName, S_IFREG))
+        XCTAssertTrue(isType(try st(P.longName), S_IFREG))
 
         // Symlinks: to file, to dir, dangling, loop.
         for (link, target) in FixtureTree.symlinkTargets {
-            XCTAssertTrue(try isType(link, S_IFLNK), link)
+            XCTAssertTrue(isType(try st(link), S_IFLNK), link)
             XCTAssertEqual(try HarnessPOSIX.readLink(tree.path(link)), Array(target.utf8), link)
         }
         var followed = stat()
