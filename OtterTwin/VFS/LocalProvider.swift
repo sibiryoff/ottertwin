@@ -72,8 +72,8 @@ final class LocalProvider: VFSProvider {
 
     // MARK: - Write
 
-    func makeWriter(at url: URL) throws -> ChunkedWriter {
-        try ChunkedWriter(url: url)
+    func makeWriter(at url: URL, replacingExisting: Bool) throws -> ChunkedWriter {
+        try ChunkedWriter(url: url, replacingExisting: replacingExisting)
     }
 
     // MARK: - Directory
@@ -111,6 +111,18 @@ final class LocalProvider: VFSProvider {
             destinationAccess.stop()
         }
         try fm.moveItem(at: from, to: to)
+    }
+
+    /// Atomic replace (#27): the existing item is swapped out, never deleted
+    /// before `source` is in its place.
+    func replaceItem(at destination: URL, withItemAt source: URL) async throws {
+        let sourceAccess = try ScopedAccess(url: source)
+        let destinationAccess = try ScopedAccess(url: destination.deletingLastPathComponent())
+        defer {
+            sourceAccess.stop()
+            destinationAccess.stop()
+        }
+        try AtomicRename.system.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination))
     }
 
     // MARK: - Private helpers
