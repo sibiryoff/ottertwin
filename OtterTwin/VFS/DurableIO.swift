@@ -10,8 +10,9 @@ enum FlushMode: String, Equatable, Sendable {
     /// flush its own cache to permanent storage.
     case fullFsync
     /// `fsync`: the data was handed to the device (or, on smbfs, the server),
-    /// whose own cache may still hold it. Used where `F_FULLFSYNC` is not
-    /// supported (smbfs, ExFAT, FAT report `ENOTSUP`, `EINVAL` or `ENOTTY`).
+    /// whose own cache may still hold it. Used where `F_FULLFSYNC` is reported
+    /// unsupported (`ENOTSUP`, `EOPNOTSUPP`, `EINVAL` or `ENOTTY`; e.g. smbfs).
+    /// On the CI runner the macOS ExFAT and FAT32 drivers do support `F_FULLFSYNC`.
     case fsync
 }
 

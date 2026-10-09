@@ -78,7 +78,7 @@ A `VFSProvider` that does real work through `LocalProvider` and injects faults b
 | `pauseRead(of: url, beforeChunk: k)` | returns a `PausePoint`; the read stops right before chunk `k` |
 | `finalizeHooks[url] = { … }` | runs synchronously in the writing task right after a writer for `url` committed (moved its file into place), e.g. to cancel that task with `withUnsafeCurrentTask` |
 | `rename = .withoutRenameFlags(intercept:)` | writers and `replaceItem` finalize as on smbfs/ExFAT (no `RENAME_EXCL`/`RENAME_SWAP`), so the fallback runs on APFS too; `intercept` can fail or act around each plain rename |
-| `flush = .withoutFullFsync(fullFsyncError:fsyncError:calls:)` | writers flush as on smbfs/ExFAT: `F_FULLFSYNC` fails (`ENOTSUP` by default) and the real `fsync` runs, or fails with `fsyncError`; `FlushCalls` counts the calls |
+| `flush = .withoutFullFsync(fullFsyncError:fsyncError:calls:)` | writers flush as without `F_FULLFSYNC` support (e.g. smbfs): `F_FULLFSYNC` fails (`ENOTSUP` by default) and the real `fsync` runs, or fails with `fsyncError`; `FlushCalls` counts the calls |
 
 Faults fire at the same byte for any chunk size, every time. Reads are pull-based: a chunk is
 read only when the consumer asks for it. So at a pause point before chunk `k` of the source, the
@@ -159,8 +159,10 @@ copy was an error): see the next section.
 A copy is verified like this:
 
 1. `ChunkedWriter.finishWriting()` flushes the temporary file with `fcntl(F_FULLFSYNC)`. Where the
-   file system reports that unsupported (`ENOTSUP`, `EOPNOTSUPP`, `EINVAL`, `ENOTTY`; smbfs and
-   possibly ExFAT/FAT), it uses `fsync` instead. Any other flush error fails the copy. Then it
+   file system reports that unsupported (`ENOTSUP`, `EOPNOTSUPP`, `EINVAL`, `ENOTTY`; e.g. smbfs),
+   it uses `fsync` instead. On the CI runner (macOS 15) the ExFAT and FAT32 drivers do support
+   `F_FULLFSYNC`, so the fallback is exercised there by simulating `ENOTSUP` for `F_FULLFSYNC`
+   while the real `fsync` runs on the ExFAT/FAT32 volume. Any other flush error fails the copy. Then it
    closes the descriptor. The temporary file is also written with `F_NOCACHE`, so its pages are not
    kept in the buffer cache.
 2. Verification opens the file again (`VFSProvider.openForVerification`, `UncachedFileReader`):
@@ -177,8 +179,7 @@ same-volume move is an atomic rename (`.renamed`): the data is not rewritten, so
 Limits (not something the client can fix):
 
 - `F_NOCACHE` only affects this Mac's unified buffer cache. A NAS's own RAM cache, a RAID
-  controller's cache or a drive's write cache can still answer the read. With `.fsync` (smbfs, some
-  removable file systems) the data was handed to the server or device, which may still hold it in
+  controller's cache or a drive's write cache can still answer the read. With `.fsync` (e.g. smbfs) the data was handed to the server or device, which may still hold it in
   volatile memory.
 - `F_NOCACHE` stops the file's pages from being cached; pages another process cached may still be
   used. The writer's own `F_NOCACHE` keeps the copy's pages out of the cache in the first place.

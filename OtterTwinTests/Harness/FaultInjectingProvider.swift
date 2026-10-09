@@ -533,7 +533,8 @@ final class PausePoint: @unchecked Sendable {
 // MARK: - FileFlush simulations
 
 extension FileFlush {
-    /// Behaves like a file system without `F_FULLFSYNC` (smbfs, ExFAT, FAT):
+    /// Behaves like a file system without `F_FULLFSYNC` (e.g. smbfs; the macOS
+    /// ExFAT and FAT32 drivers support it, at least on the CI runner):
     /// `F_FULLFSYNC` fails with `fullFsyncError` (`ENOTSUP` by default) and
     /// the real `fsync` runs, unless `fsyncError` makes it fail too. `calls`
     /// counts the calls.

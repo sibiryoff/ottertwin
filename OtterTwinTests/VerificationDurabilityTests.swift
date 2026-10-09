@@ -164,7 +164,8 @@ final class VerificationDurabilityTests: XCTestCase {
             print("#28: \(fileSystem.rawValue) flushed with \(realMode.rawValue)")
             assertTreesEqual(expected: source, actual: real, comparator: TreeComparator(checks: [.type, .size, .content]))
 
-            // Without F_FULLFSYNC (as smbfs/ExFAT report it): the real fsync runs on this volume.
+            // Without F_FULLFSYNC (as smbfs reports it; on the CI runner ExFAT and FAT32
+            // support F_FULLFSYNC): the real fsync runs on this volume.
             let calls = FlushCalls()
             provider.flush = .withoutFullFsync(calls: calls)
             let fallback = volume.mountPoint.appendingPathComponent("fallback.bin")
