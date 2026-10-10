@@ -359,11 +359,18 @@ final class AtomicFinalizeTests: XCTestCase {
             let outcome = await run(.move, source, to: destination)
 
             XCTAssertNil(outcome.error, setup.rawValue)
-            XCTAssertTrue(outcome.isVerified, setup.rawValue)
+            let sameVolume = setup == .sameVolume || setup == .sameVolumeWithoutRenameFlags
+            if sameVolume {
+                // #28: a same-volume move is a rename; there is nothing to verify.
+                if case .renamed? = outcome.result {} else {
+                    XCTFail("\(setup.rawValue): expected .renamed, got \(String(describing: outcome.result))")
+                }
+            } else {
+                XCTAssertTrue(outcome.isVerified, setup.rawValue)
+            }
             XCTAssertFalse(fm.fileExists(atPath: source.path), "\(setup.rawValue): source moved")
             assertTree(destination, matches: sourceBefore, comparator: TreeComparator(checks: .data), setup.rawValue)
             assertContents(of: folder, are: ["existing.bin"], setup.rawValue)
-            let sameVolume = setup == .sameVolume || setup == .sameVolumeWithoutRenameFlags
             XCTAssertEqual(provider.replaceCalls.count, sameVolume ? 1 : 0, "\(setup.rawValue): same-volume moves replace by rename")
             XCTAssertTrue(provider.deleteCalls.allSatisfy { $0 == source }, "\(setup.rawValue): nothing but the source deleted")
         }

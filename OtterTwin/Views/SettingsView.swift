@@ -25,7 +25,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.checksumEnabled")
 
                 if !settings.checksumEnabled {
-                    Label("Checksum verification is disabled. Copies and moves can complete without integrity validation.", systemImage: "exclamationmark.triangle.fill")
+                    Label("Checksum verification is disabled. Copies can complete without integrity validation. Moves to another volume are always verified before the source is deleted.", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.orange)
                         .accessibilityIdentifier("settings.checksumWarning")
@@ -87,7 +87,7 @@ struct SettingsView: View {
                 settings.setChecksumEnabled(true)
             }
         } message: {
-            Text("OtterTwin will not verify SHA-256 checksums after copy or move operations.")
+            Text("OtterTwin will not verify SHA-256 checksums after copying. Moves to another volume are always verified before the source is deleted.")
         }
     }
 

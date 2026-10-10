@@ -70,6 +70,21 @@ final class LocalProvider: VFSProvider {
         }
     }
 
+    // MARK: - Verification read (#28)
+
+    func openForVerification(_ url: URL, chunkSize: Int) throws -> VerificationRead {
+        let access = try ScopedAccess(url: url)
+        let reader: UncachedFileReader
+        do {
+            reader = try UncachedFileReader(url: url)
+        } catch {
+            access.stop()
+            throw error
+        }
+        return VerificationRead(chunks: reader.chunks(chunkSize: chunkSize, keepAlive: access),
+                                cacheBypassed: reader.cacheBypassed)
+    }
+
     // MARK: - Write
 
     func makeWriter(at url: URL, replacingExisting: Bool) throws -> ChunkedWriter {
@@ -103,6 +118,10 @@ final class LocalProvider: VFSProvider {
 
     // MARK: - Move (same-volume rename)
 
+    /// A rename and nothing else (#28): never replaces an existing item
+    /// (`AtomicRename.moveExclusively`) and never copies. Across volumes it
+    /// fails with `EXDEV`, unlike `FileManager.moveItem`, which would silently
+    /// copy and delete without verification.
     func move(from: URL, to: URL) async throws {
         let sourceAccess = try ScopedAccess(url: from)
         let destinationAccess = try ScopedAccess(url: to.deletingLastPathComponent())
@@ -110,7 +129,7 @@ final class LocalProvider: VFSProvider {
             sourceAccess.stop()
             destinationAccess.stop()
         }
-        try fm.moveItem(at: from, to: to)
+        try AtomicRename.system.moveExclusively(from: from, to: to)
     }
 
     /// Replace for same-volume moves (#27): the existing item is parked under a

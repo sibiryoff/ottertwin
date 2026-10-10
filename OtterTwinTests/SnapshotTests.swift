@@ -56,7 +56,7 @@ final class SnapshotTests: XCTestCase {
         let srcHash = "a3b4c5d6e7f80001a3b4c5d6e7f80001a3b4c5d6e7f80001a3b4c5d6e7f80001"
         let view = OperationProgressView(
             operation: makeOperation(),
-            state: .complete(result: .verified(sourceHash: srcHash, destHash: srcHash)),
+            state: .complete(result: .verified(sourceHash: srcHash, destHash: srcHash, flushMode: .fullFsync, cacheBypassed: true)),
             onCancel: {},
             onDismiss: {}
         )

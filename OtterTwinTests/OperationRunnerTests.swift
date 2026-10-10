@@ -120,14 +120,19 @@ final class OperationRunnerTests: XCTestCase {
         XCTAssertEqual(try outputEntries(), [], "unverified destination removed")
     }
 
+    /// A cross-volume move (copy, verify, delete the source) cancelled during
+    /// its copy. (Since #28 a same-volume move is a bare rename with nothing to
+    /// cancel in the middle, see `FileOperationCancellationTests`.)
     @MainActor
     func testCancelledMoveKeepsTheSource() async throws {
+        let volume = try makeScratchVolume(.apfs)
         let source = tree.url(FixtureTree.Path.multiChunk)
         let before = try TreeSnapshot.capture(source)
         let duringMove = provider.pauseRead(of: source, beforeChunk: 1)
         let runner = OperationRunner()
 
-        start(runner, .move, [source])
+        runner.start(kind: .move, sources: [source], destinationDirectory: volume.mountPoint,
+                     provider: provider, service: makeService())
         let reached = await duringMove.waitUntilReached()
         XCTAssertTrue(reached)
         runner.cancel()
@@ -137,7 +142,8 @@ final class OperationRunnerTests: XCTestCase {
         assertCancelled(runner)
         XCTAssertTrue(provider.moveCalls.isEmpty)
         XCTAssertTrue(provider.deleteCalls.isEmpty)
-        XCTAssertEqual(try outputEntries(), [])
+        XCTAssertFalse(fm.fileExists(atPath: volume.mountPoint.appendingPathComponent(source.lastPathComponent).path))
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: volume.mountPoint.path).filter(ChunkedWriter.isDiscardablePartialFileName), [])
         assertTree(source, matches: before, "source unchanged")
     }
 

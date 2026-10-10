@@ -51,7 +51,10 @@ actor FileOperationService {
         }
     }
 
-    /// Cross-volume: copy+verify, then delete the source. Same-volume: atomic rename.
+    /// Cross-volume: copy, always verify (whatever `checksumEnabled` says,
+    /// #28), then delete the source. If that delete fails, the verified copy is
+    /// kept and the move ends `.partiallyComplete(…, .sourceNotRemoved)`.
+    /// Same-volume: atomic rename, nothing to verify (`.renamed`).
     /// Runs in the caller's task; see `copy(…onState:)` for cancellation. A
     /// cancelled move never deletes its source.
     func move(
@@ -71,35 +74,59 @@ actor FileOperationService {
             }
 
             if sameVolume {
-                let result = try await self.performSameVolumeMove(
-                    source: source, target: target,
-                    provider: provider, onState: onState
-                )
-                onState(.complete(result: result))
-            } else {
-                let result = try await self.performCopy(
-                    source: source, target: target,
-                    provider: provider, onState: onState
-                )
-                let dest = target.url
-                // Last point to cancel: the source has not been touched yet.
-                if Task.isCancelled {
-                    if target.replacesExisting {
-                        // The verified copy has already replaced the original
-                        // destination, which is gone: removing the copy would
-                        // leave neither. Keep it; the source stays untouched.
-                        Self.logger.warning("Move cancelled after its copy replaced the destination; the copy is kept and the source is not deleted")
-                    } else {
-                        // Remove the copy we just made so a cancelled move
-                        // leaves the file system as it was.
-                        await self.removeIncompleteDestination(dest, provider: provider, reason: "move cancelled before source delete")
-                    }
-                    throw OperationError.cancelled
+                do {
+                    try await self.performSameVolumeMove(source: source, target: target, provider: provider)
+                    onState(.complete(result: .renamed))
+                    return
+                } catch where Self.isCrossDeviceError(error) {
+                    // The rename found the destination on another volume after
+                    // all (`EXDEV`; nothing was changed): move it the verified way.
+                    Self.logger.info("Rename crossed volumes; moving by verified copy instead")
                 }
-                try await provider.delete(source)
-                onState(.complete(result: result))
             }
+            try await self.performCrossVolumeMove(source: source, target: target,
+                                                  provider: provider, onState: onState)
         }
+    }
+
+    /// Copy, always verify, then delete the source (see `move(…onState:)`).
+    private func performCrossVolumeMove(
+        source: URL,
+        target: Target,
+        provider: any VFSProvider,
+        onState: StateHandler
+    ) async throws {
+        // The source is deleted below, so the copy must be verified.
+        let result = try await performCopy(
+            source: source, target: target,
+            provider: provider, alwaysVerify: true, onState: onState
+        )
+        let dest = target.url
+        // Last point to cancel: the source has not been touched yet.
+        if Task.isCancelled {
+            if target.replacesExisting {
+                // The verified copy has already replaced the original
+                // destination, which is gone: removing the copy would
+                // leave neither. Keep it; the source stays untouched.
+                Self.logger.warning("Move cancelled after its copy replaced the destination; the copy is kept and the source is not deleted")
+            } else {
+                // Remove the copy we just made so a cancelled move
+                // leaves the file system as it was.
+                await removeIncompleteDestination(dest, provider: provider, reason: "move cancelled before source delete")
+            }
+            throw OperationError.cancelled
+        }
+        do {
+            try await provider.delete(source)
+        } catch {
+            // The destination is a verified copy: keep it (removing it
+            // could lose data if the source is partly gone) and report
+            // a partial success instead of a failure.
+            Self.logger.error("Move copied and verified \(dest.lastPathComponent, privacy: .private), but the source could not be removed: \(error.localizedDescription, privacy: .private)")
+            onState(.partiallyComplete(result: result, issue: .sourceNotRemoved(error)))
+            return
+        }
+        onState(.complete(result: result))
     }
 
     /// Stream form of `copy(…onState:)`. Ending the iteration early, or
@@ -189,15 +216,21 @@ actor FileOperationService {
     /// file, verified there, and only then moved into place (or swapped with
     /// the existing destination for `.overwrite`). Every failure or cancel
     /// before that point only discards the temporary file.
+    ///
+    /// Meaningful verification (#28): the temporary file is flushed to storage
+    /// and closed (`finishWriting()`), then read back through a new descriptor
+    /// with `F_NOCACHE` (`openForVerification`). The copy is verified when
+    /// `checksumEnabled` is on, or always with `alwaysVerify` (moves).
     private func performCopy(
         source: URL,
         target: Target,
         provider: any VFSProvider,
+        alwaysVerify: Bool = false,
         onState: StateHandler
     ) async throws -> VerificationResult {
         let destination = target.url
         let chunkSize = settings.chunkSizeBytes
-        let checksumEnabled = settings.checksumEnabled
+        let verify = settings.checksumEnabled || alwaysVerify
         let totalSize = source.fileByteCount
         var sourceHasher = SHA256()
         var bytesWritten: Int64 = 0
@@ -214,10 +247,11 @@ actor FileOperationService {
         // The writer stores the data in a temporary file in the destination
         // folder, unique to this operation; only `commit()` moves it into place.
         // `abort()` removes the temporary file and never touches `destination`.
+        let flushMode: FlushMode
         do {
             for try await chunk in provider.readChunks(of: source, chunkSize: chunkSize) {
                 try Task.checkCancellation()
-                if checksumEnabled { sourceHasher.update(data: chunk) }
+                if verify { sourceHasher.update(data: chunk) }
                 try writer.write(chunk)
                 bytesWritten += Int64(chunk.count)
                 let p = totalSize > 0 ? Double(bytesWritten) / Double(totalSize) : 0
@@ -226,7 +260,7 @@ actor FileOperationService {
             // A cancelled task can end a provider's stream early *without*
             // throwing; never finalize a file that may be truncated.
             try Task.checkCancellation()
-            try writer.finishWriting()
+            flushMode = try writer.finishWriting()
         } catch is CancellationError {
             writer.abort()
             throw OperationError.cancelled
@@ -236,14 +270,15 @@ actor FileOperationService {
         }
 
         let result: VerificationResult
-        if checksumEnabled {
+        if verify {
             let sourceHex = sourceHasher.finalize().hexString
-            let destHex = try await verifiedHash(of: writer, chunkSize: chunkSize, provider: provider, onState: onState)
+            let (destHex, cacheBypassed) = try await verifiedHash(of: writer, chunkSize: chunkSize, provider: provider, onState: onState)
             guard sourceHex == destHex else {
                 writer.abort()
                 throw OperationError.checksumMismatch(sourceHash: sourceHex, destHash: destHex)
             }
-            result = .verified(sourceHash: sourceHex, destHash: destHex)
+            result = .verified(sourceHash: sourceHex, destHash: destHex,
+                               flushMode: flushMode, cacheBypassed: cacheBypassed)
         } else {
             Self.logger.warning("Checksum verification skipped for destination: \(destination.path, privacy: .public)")
             result = .skipped
@@ -267,21 +302,28 @@ actor FileOperationService {
         return result
     }
 
-    /// Reads back the writer's finished temporary file and returns its SHA-256.
-    /// On cancel or error the temporary file is discarded (`abort()`).
+    /// Reads back the writer's finished (flushed and closed) temporary file
+    /// through a new, uncached descriptor and returns its SHA-256, and whether
+    /// the read bypassed the cache. On cancel or error the temporary file is
+    /// discarded (`abort()`).
     private func verifiedHash(
         of writer: ChunkedWriter,
         chunkSize: Int,
         provider: any VFSProvider,
         onState: StateHandler
-    ) async throws -> String {
+    ) async throws -> (hash: String, cacheBypassed: Bool) {
         var destHasher = SHA256()
         var bytesVerified: Int64 = 0
         let copy = writer.temporaryURL
         let destSize = copy.fileByteCount
+        let cacheBypassed: Bool
 
         do {
-            for try await chunk in provider.readChunks(of: copy, chunkSize: chunkSize) {
+            let read = try provider.openForVerification(copy, chunkSize: chunkSize)
+            // Bypassed only if neither the written pages nor the read went
+            // through this Mac's buffer cache.
+            cacheBypassed = writer.writesBypassCache && read.cacheBypassed
+            for try await chunk in read.chunks {
                 try Task.checkCancellation()
                 destHasher.update(data: chunk)
                 bytesVerified += Int64(chunk.count)
@@ -297,7 +339,7 @@ actor FileOperationService {
             writer.abort()
             throw OperationError.ioError(error)
         }
-        return destHasher.finalize().hexString
+        return (destHasher.finalize().hexString, cacheBypassed)
     }
 
     /// Removes a destination this operation created and finalized, when a move
@@ -314,73 +356,23 @@ actor FileOperationService {
 
     // MARK: - Same-volume move (atomic rename)
 
+    /// An atomic rename (#28): rename does not touch the data, so there is
+    /// nothing to verify and no hashing before or after. (No inode or size
+    /// check either: smbfs can derive inode numbers from names, so they may
+    /// change on a rename that is perfectly fine.)
     private func performSameVolumeMove(
         source: URL,
         target: Target,
-        provider: any VFSProvider,
-        onState: StateHandler
-    ) async throws -> VerificationResult {
-        let destination = target.url
-        let chunkSize = settings.chunkSizeBytes
-        let checksumEnabled = settings.checksumEnabled
-
-        var sourceHex: String?
-        if checksumEnabled {
-            onState(.copying(progress: 0))
-            let totalSize = source.fileByteCount
-            var hasher = SHA256()
-            var bytesRead: Int64 = 0
-            for try await chunk in provider.readChunks(of: source, chunkSize: chunkSize) {
-                try Task.checkCancellation()
-                hasher.update(data: chunk)
-                bytesRead += Int64(chunk.count)
-                let p = totalSize > 0 ? Double(bytesRead) / Double(totalSize) : 0
-                onState(.copying(progress: min(p, 1.0)))
-            }
-            sourceHex = hasher.finalize().hexString
-        }
-
+        provider: any VFSProvider
+    ) async throws {
         // Last point to cancel: nothing has been changed yet.
         try Task.checkCancellation()
-        // Atomic rename. `.overwrite` (#27) swaps the existing item out instead
-        // of deleting it first.
+        // `.overwrite` (#27) swaps the existing item out instead of deleting it first.
         if target.replacesExisting {
-            try await provider.replaceItem(at: destination, withItemAt: source)
+            try await provider.replaceItem(at: target.url, withItemAt: source)
         } else {
-            try await provider.move(from: source, to: destination)
+            try await provider.move(from: source, to: target.url)
         }
-
-        guard checksumEnabled, let srcHex = sourceHex else {
-            Self.logger.warning("Checksum verification skipped for same-volume move destination: \(destination.path, privacy: .public)")
-            return .skipped
-        }
-
-        // Sanity-check dest after rename — mismatch indicates a filesystem anomaly.
-        // The rename has happened and cannot be cancelled any more: cancelling
-        // now only stops this check, and the move is reported as complete with
-        // the checksum skipped (the file exists exactly once, at the destination).
-        onState(.verifying(progress: 0))
-        let destSize = destination.fileByteCount
-        var destHasher = SHA256()
-        var bytesRead: Int64 = 0
-        do {
-            for try await chunk in provider.readChunks(of: destination, chunkSize: chunkSize) {
-                try Task.checkCancellation()
-                destHasher.update(data: chunk)
-                bytesRead += Int64(chunk.count)
-                let p = destSize > 0 ? Double(bytesRead) / Double(destSize) : 0
-                onState(.verifying(progress: min(p, 1.0)))
-            }
-            try Task.checkCancellation()
-        } catch is CancellationError {
-            Self.logger.warning("Post-rename check cancelled for same-volume move destination: \(destination.path, privacy: .public)")
-            return .skipped
-        }
-        let destHex = destHasher.finalize().hexString
-        if srcHex != destHex {
-            throw OperationError.checksumMismatch(sourceHash: srcHex, destHash: destHex)
-        }
-        return .verified(sourceHash: srcHex, destHash: destHex)
     }
 
     // MARK: - Recursive directory copy
@@ -501,16 +493,30 @@ actor FileOperationService {
 
     // MARK: - Private helpers
 
-    private func isSameVolume(_ a: URL, _ b: URL) -> Bool {
-        guard let va = Self.volumeIdentifier(for: a),
-              let vb = Self.volumeIdentifier(for: b.deletingLastPathComponent()) else {
+    /// Whether moving `source` to `destination` can be a rename (#28). The
+    /// source item itself is checked with `lstat` (a symlink is moved, not its
+    /// target); the destination folder with `stat`, which follows symlinks, so
+    /// a folder that links to another volume counts as that volume. Unknown →
+    /// false (the verified copy path). The rename itself also refuses to cross
+    /// volumes (`EXDEV`), see `move(…onState:)`.
+    private func isSameVolume(_ source: URL, _ destination: URL) -> Bool {
+        var sourceInfo = stat(), folderInfo = stat()
+        guard lstat(source.path, &sourceInfo) == 0,
+              stat(destination.deletingLastPathComponent().path, &folderInfo) == 0 else {
             return false
         }
-        return va == vb
+        return sourceInfo.st_dev == folderInfo.st_dev
     }
 
-    private static func volumeIdentifier(for url: URL) -> NSNumber? {
-        try? FileManager.default.attributesOfItem(atPath: url.path)[.systemNumber] as? NSNumber
+    /// `EXDEV`: a rename between two volumes.
+    private static func isCrossDeviceError(_ error: Error) -> Bool {
+        if let posix = error as? POSIXError { return posix.code == .EXDEV }
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain { return nsError.code == Int(EXDEV) }
+        if let underlying = nsError.userInfo[NSUnderlyingErrorKey] as? NSError {
+            return underlying.domain == NSPOSIXErrorDomain && underlying.code == Int(EXDEV)
+        }
+        return false
     }
 
     /// Whether anything is at `url`, without following symlinks: a dangling

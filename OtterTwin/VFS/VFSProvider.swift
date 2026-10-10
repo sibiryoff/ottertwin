@@ -6,6 +6,12 @@ protocol VFSProvider {
     func listDirectory(_ url: URL) async throws -> [FileItem]
     func attributes(of url: URL) async throws -> FileItem
     func readChunks(of url: URL, chunkSize: Int) -> AsyncThrowingStream<Data, Error>
+    /// Verification read (#28): opens `url` now, through a new descriptor with
+    /// `F_NOCACHE` set (see `UncachedFileReader`), and streams its chunks.
+    /// Callers open it only after the writer was flushed and closed
+    /// (`ChunkedWriter.finishWriting()`), so the bytes are read back from
+    /// storage rather than from what this Mac still has cached.
+    func openForVerification(_ url: URL, chunkSize: Int) throws -> VerificationRead
     func createDirectory(at url: URL) async throws
     func delete(_ url: URL) async throws
     func move(from: URL, to: URL) async throws
@@ -61,6 +67,12 @@ struct TrashNotSupportedError: Error, LocalizedError {
 /// The temporary file is created exclusively (`O_EXCL`) with owner-only
 /// permissions (0600), as the destination itself was before (#1).
 ///
+/// Flush (#28): `finishWriting()` flushes the data to storage
+/// (`F_FULLFSYNC`, or `fsync` where that is unsupported, see `FileFlush`)
+/// before closing, and records how in `flushMode`. The temporary file is also
+/// written with `F_NOCACHE`, so its pages do not linger in this Mac's buffer
+/// cache, where a verification read could find them instead of the storage.
+///
 /// Atomic finalize (#27): callers verify `temporaryURL` between
 /// `finishWriting()` and `commit()`, so the destination is touched only once
 /// the new data is verified. `commit()` uses `AtomicRename`: a new destination
@@ -89,18 +101,30 @@ class ChunkedWriter {
     private let handle: FileHandle
     private let scopedAccess: ScopedAccess?
     private let rename: AtomicRename
-    private var isWritingFinished = false
+    private let flush: FileFlush
+    /// How the data was flushed; set once `finishWriting()` succeeded (#28).
+    private(set) var flushMode: FlushMode?
+    /// The temporary file's descriptor is closed (finished or aborted).
+    private(set) var isWritingFinished = false
+    /// `close` was called on the descriptor (even if it reported an error):
+    /// it is never closed twice, since its number may already be reused.
+    private var isHandleClosed = false
+    /// Whether `F_NOCACHE` could be set on the partial file (#28): its pages
+    /// are then not kept in this Mac's buffer cache.
+    let writesBypassCache: Bool
     private var isFinalized = false
 
     /// Without `replacingExisting`, an existing item at `url` makes this throw
     /// `EEXIST` before any data is copied (reported as a conflict); `commit()`
-    /// re-checks atomically. `rename` is a test hook (see `AtomicRename`).
-    init(url: URL, replacingExisting: Bool = false, rename: AtomicRename = .system) throws {
+    /// re-checks atomically. `rename` and `flush` are test hooks (see
+    /// `AtomicRename` and `FileFlush`).
+    init(url: URL, replacingExisting: Bool = false, rename: AtomicRename = .system, flush: FileFlush = .system) throws {
         let access = try? ScopedAccess(url: url.deletingLastPathComponent())
         scopedAccess = access
         destinationURL = url
         replacesExisting = replacingExisting
         self.rename = rename
+        self.flush = flush
         let id = UUID()
         temporaryURL = Self.hiddenSiblingURL(for: url, id: id, suffix: Self.temporarySuffix)
         backupURL = Self.hiddenSiblingURL(for: url, id: id, suffix: Self.backupSuffix)
@@ -116,20 +140,38 @@ class ChunkedWriter {
             access?.stop()
             throw POSIXError(POSIXErrorCode(rawValue: code) ?? .EIO)
         }
-        handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
+        // Best effort (#28): only keeps the written pages out of the cache; the
+        // verification read sets F_NOCACHE itself and reports whether it could.
+        if fcntl(fd, F_NOCACHE, 1) == -1 {
+            let code = errno
+            Self.logger.info("F_NOCACHE not set for partial file: errno \(code, privacy: .public)")
+            writesBypassCache = false
+        } else {
+            writesBypassCache = true
+        }
+        // Closed only through `closeHandle()` (or `deinit`), exactly once.
+        handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
     }
 
     func write(_ chunk: Data) throws {
         try handle.write(contentsOf: chunk)
     }
 
-    /// Closes the temporary file: all data is in `temporaryURL`, ready to be
-    /// verified. Nothing is visible under the final name yet. On error the
-    /// caller must call `abort()`.
-    func finishWriting() throws {
-        guard !isWritingFinished else { return }
-        try handle.close()
+    /// Flushes the temporary file to storage (#28, see `FileFlush`) and closes
+    /// it: all data is in `temporaryURL`, ready to be verified through a new
+    /// descriptor. Nothing is visible under the final name yet. Returns (and
+    /// records in `flushMode`) how the data was flushed. On error, including a
+    /// failed flush, the caller must call `abort()`.
+    @discardableResult
+    func finishWriting() throws -> FlushMode {
+        if let flushMode { return flushMode }
+        // Aborted: the data is gone, there is nothing to finish.
+        guard !isWritingFinished else { throw POSIXError(.EBADF) }
+        let mode = try flush.flush(handle.fileDescriptor)
+        try closeHandle()
         isWritingFinished = true
+        flushMode = mode
+        return mode
     }
 
     /// Moves the finished temporary file to `destinationURL` (see the type's
@@ -159,7 +201,7 @@ class ChunkedWriter {
         guard !isFinalized else { return }
         if !isWritingFinished {
             // The data is being discarded, so a failing close cannot lose anything.
-            try? handle.close()
+            try? closeHandle()
             isWritingFinished = true
         }
         if unlink(temporaryURL.path) != 0, errno != ENOENT {
@@ -168,7 +210,20 @@ class ChunkedWriter {
         }
     }
 
+    /// Closes the descriptor at most once. A failed close is not retried: the
+    /// descriptor may be released anyway, and its number reused by then.
+    private func closeHandle() throws {
+        guard !isHandleClosed else { return }
+        isHandleClosed = true
+        try handle.close()
+    }
+
     deinit {
+        if !isHandleClosed {
+            // Abandoned without finishing or aborting: release the descriptor
+            // (the partial file itself stays hidden and discardable).
+            Darwin.close(handle.fileDescriptor)
+        }
         scopedAccess?.stop()
     }
 

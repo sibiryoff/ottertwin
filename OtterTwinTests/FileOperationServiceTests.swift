@@ -39,7 +39,7 @@ final class FileOperationServiceTests: XCTestCase {
             XCTFail("Expected .complete, got \(String(describing: finalState))")
             return
         }
-        guard case .verified(let srcHash, let dstHash) = result else {
+        guard case .verified(let srcHash, let dstHash, _, _) = result else {
             XCTFail("Expected .verified")
             return
         }

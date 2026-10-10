@@ -36,6 +36,13 @@ struct ByteFault {
 /// reads of its final URL: read faults, pause points and recorded reads are
 /// keyed by the final URL, as before. `rename` replaces the renames that
 /// writers and `replaceItem` finalize with (see `AtomicRename.withoutRenameFlags`).
+///
+/// Verification reads (#28) go through `openForVerification`, which opens the
+/// file with the production `UncachedFileReader` (new descriptor, `F_NOCACHE`)
+/// and records each open in `verificationOpens`, with the state of the writer
+/// at that moment (flushed and closed or not). Read faults and pause points
+/// apply to these reads as to `readChunks`. `flush` replaces the flush
+/// primitives writers use (see `FileFlush.withoutFullFsync`).
 final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     private let local = LocalProvider()
     private let fakeTrash: URL
@@ -50,9 +57,13 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     private var _deleteFaults: [URL: InjectedFault] = [:]
     private var _moveFaults: [URL: InjectedFault] = [:]
     private var _trashFaults: [URL: InjectedFault] = [:]
+    private var _moveErrors: [URL: Error] = [:]
     private var _readPauses: [URL: [Int: PausePoint]] = [:]
     private var _finalizeHooks: [URL: @Sendable () -> Void] = [:]
     private var _rename: AtomicRename = .system
+    private var _flush: FileFlush = .system
+    private var _writers: [String: WeakWriter] = [:]
+    private var _verificationOpens: [VerificationOpen] = []
     private var _temporaryFiles: [String: URL] = [:]
     private var _replaceCalls: [(source: URL, destination: URL)] = []
     private var _trashCalls: [URL] = []
@@ -110,6 +121,12 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
         get { locked { _moveFaults } }
         set { locked { _moveFaults = newValue } }
     }
+    /// Keyed by the move's source: `move` and `replaceItem` throw this error
+    /// (e.g. `POSIXError(.EXDEV)`) and change nothing.
+    var moveErrors: [URL: Error] {
+        get { locked { _moveErrors } }
+        set { locked { _moveErrors = newValue } }
+    }
     var trashFaults: [URL: InjectedFault] {
         get { locked { _trashFaults } }
         set { locked { _trashFaults = newValue } }
@@ -130,6 +147,12 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
         set { locked { _rename = newValue } }
     }
 
+    /// The flush primitives writers use in `finishWriting()` (#28).
+    var flush: FileFlush {
+        get { locked { _flush } }
+        set { locked { _flush = newValue } }
+    }
+
     /// Returns a pause point that holds the next read of `url` right before its
     /// `chunkIndex`-th chunk (0-based) is read, in every read stream of `url`.
     @discardableResult
@@ -147,6 +170,23 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     var replaceCalls: [(source: URL, destination: URL)] { locked { _replaceCalls } }
     var readCalls: [URL] { locked { _readCalls } }
     var writerCalls: [URL] { locked { _writerCalls } }
+    /// Every `openForVerification` call (#28), in order.
+    var verificationOpens: [VerificationOpen] { locked { _verificationOpens } }
+
+    /// One verification open (#28), as seen when the descriptor was opened.
+    struct VerificationOpen {
+        /// The final URL (a writer's temporary file is reported as its final URL).
+        let url: URL
+        /// The file actually opened (e.g. the writer's temporary file).
+        let openedURL: URL
+        /// `F_NOCACHE` was set on the new descriptor (`UncachedFileReader`).
+        let cacheBypassed: Bool
+        /// For a writer's temporary file: whether the writer had closed its
+        /// descriptor, and how it had flushed, when verification opened the file.
+        /// nil when the file was not written by a writer of this provider.
+        let writerClosed: Bool?
+        let writerFlushMode: FlushMode?
+    }
     /// Bytes delivered so far by read streams of `url` (all streams combined).
     func bytesDelivered(from url: URL) -> Int64 { locked { _bytesDelivered[Self.key(url)] ?? 0 } }
     /// Read streams of `url` that ran to their end (EOF, error or cancellation).
@@ -169,16 +209,45 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     func createDirectory(at url: URL) async throws { try await local.createDirectory(at: url) }
 
     func readChunks(of url: URL, chunkSize: Int) -> AsyncThrowingStream<Data, Error> {
-        let (logical, fault, pauses) = locked { () -> (URL, ByteFault?, [Int: PausePoint]) in
+        let (logical, fault, pauses) = beginRead(of: url)
+        return stream(of: logical, state: ReadState(url: url, chunkSize: chunkSize, reader: nil,
+                                                    onFinish: finishedReadHandler(logical)),
+                      fault: fault, pauses: pauses)
+    }
+
+    /// Opens the file now with the production `UncachedFileReader` and records
+    /// the open (see `verificationOpens`). Faults and pauses as for `readChunks`.
+    func openForVerification(_ url: URL, chunkSize: Int) throws -> VerificationRead {
+        let (logical, fault, pauses) = beginRead(of: url)
+        let writer = locked { _writers[Self.key(url)]?.writer }
+        let reader = try UncachedFileReader(url: url)
+        let open = VerificationOpen(url: logical, openedURL: url, cacheBypassed: reader.cacheBypassed,
+                                    writerClosed: writer.map { $0.isWritingFinished },
+                                    writerFlushMode: writer?.flushMode)
+        locked { _verificationOpens.append(open) }
+        let state = ReadState(url: url, chunkSize: chunkSize, reader: reader, onFinish: finishedReadHandler(logical))
+        return VerificationRead(chunks: stream(of: logical, state: state, fault: fault, pauses: pauses),
+                                cacheBypassed: reader.cacheBypassed)
+    }
+
+    /// Records a read of `url` and returns its logical URL, fault and pause points.
+    private func beginRead(of url: URL) -> (URL, ByteFault?, [Int: PausePoint]) {
+        locked { () -> (URL, ByteFault?, [Int: PausePoint]) in
             // A writer's temporary file is read as its final URL (#27, see above).
             let logical = _temporaryFiles[Self.key(url)] ?? url
             _readCalls.append(logical)
             return (logical, Self.lookup(_readFaults, logical), Self.lookup(_readPauses, logical) ?? [:])
         }
+    }
+
+    private func finishedReadHandler(_ logical: URL) -> () -> Void {
         let key = Self.key(logical)
-        let state = ReadState(url: url, chunkSize: chunkSize) { [self] in
-            self.locked { self._finishedReads[key, default: 0] += 1 }
-        }
+        return { [self] in self.locked { self._finishedReads[key, default: 0] += 1 } }
+    }
+
+    private func stream(of logical: URL, state: ReadState, fault: ByteFault?,
+                        pauses: [Int: PausePoint]) -> AsyncThrowingStream<Data, Error> {
+        let key = Self.key(logical)
         return AsyncThrowingStream(unfolding: { [self] in
             if let pending = state.pendingError {
                 state.pendingError = nil
@@ -224,17 +293,21 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     }
 
     func makeWriter(at url: URL, replacingExisting: Bool) throws -> ChunkedWriter {
-        let (faults, rename) = locked { () -> (FaultInjectingWriter.Faults, AtomicRename) in
+        let (faults, rename, flush) = locked { () -> (FaultInjectingWriter.Faults, AtomicRename, FileFlush) in
             _writerCalls.append(url)
             return (FaultInjectingWriter.Faults(
                 write: Self.lookup(_writeFaults, url),
                 corruptAt: Self.lookup(_corruptions, url),
                 close: Self.lookup(_closeFaults, url),
                 afterFinalize: Self.lookup(_finalizeHooks, url)
-            ), _rename)
+            ), _rename, _flush)
         }
-        let writer = try FaultInjectingWriter(url: url, replacingExisting: replacingExisting, rename: rename, faults: faults)
-        locked { _temporaryFiles[Self.key(writer.temporaryURL)] = url }
+        let writer = try FaultInjectingWriter(url: url, replacingExisting: replacingExisting, rename: rename,
+                                              flush: flush, faults: faults)
+        locked {
+            _temporaryFiles[Self.key(writer.temporaryURL)] = url
+            _writers[Self.key(writer.temporaryURL)] = WeakWriter(writer: writer)
+        }
         return writer
     }
 
@@ -248,21 +321,23 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     }
 
     func move(from: URL, to: URL) async throws {
-        let fault = locked { () -> InjectedFault? in
+        let (fault, moveError) = locked { () -> (InjectedFault?, Error?) in
             _moveCalls.append((from, to))
-            return Self.lookup(_moveFaults, from)
+            return (Self.lookup(_moveFaults, from), Self.lookup(_moveErrors, from))
         }
         if let fault { throw fault }
+        if let moveError { throw moveError }
         try await local.move(from: from, to: to)
     }
 
     /// Keyed by `source` for `moveFaults`, like `move`.
     func replaceItem(at destination: URL, withItemAt source: URL) async throws {
-        let (fault, rename) = locked { () -> (InjectedFault?, AtomicRename) in
+        let (fault, moveError, rename) = locked { () -> (InjectedFault?, Error?, AtomicRename) in
             _replaceCalls.append((source, destination))
-            return (Self.lookup(_moveFaults, source), _rename)
+            return (Self.lookup(_moveFaults, source), Self.lookup(_moveErrors, source), _rename)
         }
         if let fault { throw fault }
+        if let moveError { throw moveError }
         try rename.replace(destination, with: source, backup: ChunkedWriter.backupURL(for: destination), swapping: false)
     }
 
@@ -295,6 +370,10 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
         return table.first { key($0.key) == wanted }?.value
     }
 
+    private struct WeakWriter {
+        weak var writer: ChunkedWriter?
+    }
+
     /// Mutable state of one pull-based read stream. Only touched by the
     /// stream's consumer, one `next()` at a time. The file is opened on the
     /// first pull and read one chunk per pull, so nothing is read ahead of the
@@ -303,6 +382,8 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
         let url: URL
         let chunkSize: Int
         private var handle: FileHandle?
+        /// Verification reads (#28): the production uncached reader, already open.
+        private var reader: UncachedFileReader?
         var offset: Int64 = 0
         var chunkIndex = 0
         var pendingError: Error?
@@ -315,14 +396,17 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
             }
         }
 
-        init(url: URL, chunkSize: Int, onFinish: @escaping () -> Void) {
+        init(url: URL, chunkSize: Int, reader: UncachedFileReader?, onFinish: @escaping () -> Void) {
             self.url = url
             self.chunkSize = chunkSize
+            self.reader = reader
             self.onFinish = onFinish
         }
 
-        /// Same calls as `LocalProvider.readChunks`; nil at end of file.
+        /// Same calls as `LocalProvider.readChunks` (or, for verification
+        /// reads, `UncachedFileReader`); nil at end of file.
         func readNextChunk() throws -> Data? {
+            if let reader { return try reader.read(upToCount: chunkSize) }
             if handle == nil { handle = try FileHandle(forReadingFrom: url) }
             let chunk = try handle?.read(upToCount: chunkSize) ?? Data()
             return chunk.isEmpty ? nil : chunk
@@ -331,6 +415,8 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
         private func closeHandle() {
             try? handle?.close()  // read-only handle; nothing to flush, a close error cannot lose data
             handle = nil
+            reader?.close()
+            reader = nil
         }
 
         deinit { closeHandle() }
@@ -354,9 +440,10 @@ final class FaultInjectingWriter: ChunkedWriter {
     private var isClosed = false
     private var isCommitted = false
 
-    init(url: URL, replacingExisting: Bool = false, rename: AtomicRename = .system, faults: Faults) throws {
+    init(url: URL, replacingExisting: Bool = false, rename: AtomicRename = .system,
+         flush: FileFlush = .system, faults: Faults) throws {
         self.faults = faults
-        try super.init(url: url, replacingExisting: replacingExisting, rename: rename)
+        try super.init(url: url, replacingExisting: replacingExisting, rename: rename, flush: flush)
     }
 
     override func write(_ chunk: Data) throws {
@@ -381,11 +468,12 @@ final class FaultInjectingWriter: ChunkedWriter {
     /// With a close fault, finishing the file fails and nothing is finalized:
     /// the data written so far stays in `temporaryURL` until the caller's
     /// `abort()` removes it (#6).
-    override func finishWriting() throws {
+    @discardableResult
+    override func finishWriting() throws -> FlushMode {
         if let fault = faults.close {
             throw fault
         }
-        try super.finishWriting()
+        return try super.finishWriting()
     }
 
     override func commit() throws {
@@ -449,6 +537,38 @@ final class PausePoint: @unchecked Sendable {
         }
         return true
     }
+}
+
+// MARK: - FileFlush simulations
+
+extension FileFlush {
+    /// Behaves like a file system without `F_FULLFSYNC` (e.g. smbfs; the macOS
+    /// ExFAT and FAT32 drivers support it, at least on the CI runner):
+    /// `F_FULLFSYNC` fails with `fullFsyncError` (`ENOTSUP` by default) and
+    /// the real `fsync` runs, unless `fsyncError` makes it fail too. `calls`
+    /// counts the calls.
+    static func withoutFullFsync(fullFsyncError: Int32 = ENOTSUP, fsyncError: Int32? = nil,
+                                 calls: FlushCalls = FlushCalls()) -> FileFlush {
+        FileFlush(
+            fullFsync: { _ in calls.recordFullFsync(); return fullFsyncError },
+            fsync: { fd in
+                calls.recordFsync()
+                if let fsyncError { return fsyncError }
+                return FileFlush.system.fsync(fd)
+            }
+        )
+    }
+}
+
+/// Counts the flush calls of a simulated `FileFlush`.
+final class FlushCalls: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _fullFsync = 0
+    private var _fsync = 0
+    var fullFsync: Int { lock.withLock { _fullFsync } }
+    var fsync: Int { lock.withLock { _fsync } }
+    func recordFullFsync() { lock.withLock { _fullFsync += 1 } }
+    func recordFsync() { lock.withLock { _fsync += 1 } }
 }
 
 // MARK: - AtomicRename simulations

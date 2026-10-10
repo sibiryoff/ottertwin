@@ -56,6 +56,11 @@ final class CopyMoveCharacterizationTests: XCTestCase {
             if case .complete(let result)? = states.last { return result }
             return nil
         }
+        /// The issue of a `.partiallyComplete` operation (#28).
+        var partialIssue: PartialCompletionIssue? {
+            if case .partiallyComplete(_, let issue)? = states.last { return issue }
+            return nil
+        }
         var isVerified: Bool {
             if case .verified? = result { return true }
             return false
@@ -125,7 +130,7 @@ final class CopyMoveCharacterizationTests: XCTestCase {
             assertNoDifferences(try dataDifferences(source, destination), name)
             // The app's hash agrees with the harness's independent SHA-256.
             let independent = try snapshot(source).entries[Array(".".utf8)]?.sha256
-            guard case .verified(let sourceHash, let destHash)? = outcome.result else {
+            guard case .verified(let sourceHash, let destHash, _, _)? = outcome.result else {
                 XCTFail("\(name): expected .verified, got \(String(describing: outcome.result))")
                 continue
             }
@@ -472,7 +477,9 @@ final class CopyMoveCharacterizationTests: XCTestCase {
         XCTAssertFalse(provider.deleteCalls.contains(source), "source never deleted")
     }
 
-    func testCrossVolumeMoveWithChecksumDisabled_knownGap28() async throws {
+    /// #28 (was a known gap): a cross-volume move verifies even when checksums
+    /// are off in Settings, because it deletes the source.
+    func testCrossVolumeMoveWithChecksumDisabledStillVerifies() async throws {
         let volume = try makeScratchVolume(.apfs)
         let tree = try makeFixture()
         let source = tree.url(FixtureTree.Path.multiChunk)
@@ -483,26 +490,60 @@ final class CopyMoveCharacterizationTests: XCTestCase {
 
         XCTAssertNil(outcome.error)
         assertTree(destination, matches: before, comparator: TreeComparator(checks: .data))
-        XCTExpectFailure("#28: a cross-volume move deletes the source without verifying when checksums are off") {
-            XCTAssertTrue(outcome.isVerified)
+        XCTAssertFalse(fm.fileExists(atPath: source.path), "source removed after a verified copy")
+        XCTAssertTrue(outcome.isVerified, "\(String(describing: outcome.result))")
+        XCTAssertEqual(provider.verificationOpens.map(\.url), [destination], "the copy was read back")
+        if case .verified(let sourceHash, let destHash, _, _)? = outcome.result {
+            let independent = before.entries[Array(".".utf8)]?.sha256
+            XCTAssertEqual(sourceHash, independent)
+            XCTAssertEqual(destHash, independent)
         }
     }
 
-    func testCrossVolumeMoveWhenSourceDeleteFails_knownGap28() async throws {
+    /// #28: with checksums off, corruption during a cross-volume move is still
+    /// caught: the source stays, the corrupted copy is removed, the mismatch is reported.
+    func testCrossVolumeMoveWithChecksumDisabledAndCorruptionKeepsSource() async throws {
         let volume = try makeScratchVolume(.apfs)
         let tree = try makeFixture()
         let source = tree.url(FixtureTree.Path.multiChunk)
         let destination = volume.mountPoint.appendingPathComponent("moved.bin")
-        provider.deleteFaults = [source: InjectedFault(message: "permission denied")]
+        provider.corruptions = [destination: Int64(2 * Self.chunkSize + 1)]
+        let before = try snapshot(source)
+
+        let outcome = await move(source, to: destination, checksum: false)
+
+        XCTAssertTrue(outcome.isChecksumMismatch, "\(String(describing: outcome.error))")
+        try assertUnchanged(before)
+        XCTAssertFalse(fm.fileExists(atPath: destination.path), "corrupted copy removed")
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: volume.mountPoint.path).filter(ChunkedWriter.isDiscardablePartialFileName), [],
+                       "no partial file left")
+        XCTAssertTrue(provider.deleteCalls.isEmpty, "source never deleted")
+    }
+
+    /// #28 (was a known gap): a verified copy whose source can't be deleted is a
+    /// reported partial success; the destination is kept, never cleaned up.
+    func testCrossVolumeMoveWhenSourceDeleteFailsKeepsDestinationAndReportsPartialSuccess() async throws {
+        let volume = try makeScratchVolume(.apfs)
+        let tree = try makeFixture()
+        let source = tree.url(FixtureTree.Path.multiChunk)
+        let destination = volume.mountPoint.appendingPathComponent("moved.bin")
+        let fault = InjectedFault(message: "permission denied")
+        provider.deleteFaults = [source: fault]
         let before = try snapshot(source)
 
         let outcome = await move(source, to: destination)
 
         try assertUnchanged(before)
         assertTree(destination, matches: before, comparator: TreeComparator(checks: .data), "verified destination is kept")
-        XCTExpectFailure("#28: a verified copy whose source can't be deleted should be a reported partial success, not an error") {
-            XCTAssertNil(outcome.error)
+        XCTAssertNil(outcome.error, "not a failure")
+        guard case .sourceNotRemoved(let error)? = outcome.partialIssue else {
+            return XCTFail("expected .partiallyComplete(.sourceNotRemoved), got \(String(describing: outcome.states.last))")
         }
+        XCTAssertEqual(error as? InjectedFault, fault)
+        guard case .partiallyComplete(.verified, _)? = outcome.states.last else {
+            return XCTFail("the kept copy was verified: \(String(describing: outcome.states.last))")
+        }
+        XCTAssertEqual(provider.deleteCalls, [source], "only the source delete was tried; the destination was not cleaned up")
     }
 
     func testCrossVolumeMoveOfFolder_knownGap9() async throws {

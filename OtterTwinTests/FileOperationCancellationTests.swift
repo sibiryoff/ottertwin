@@ -221,24 +221,34 @@ final class FileOperationCancellationTests: XCTestCase {
 
     // MARK: - Move
 
-    func testCancelDuringSameVolumeMoveKeepsTheSource() async throws {
+    /// Since #28 a same-volume move reads nothing (it is only a rename), so its
+    /// one cancellation point is right before the rename: a move whose task is
+    /// already cancelled never renames anything.
+    func testCancelBeforeSameVolumeRenameKeepsTheSource() async throws {
         let tree = try makeFixture()
         let source = tree.url(FixtureTree.Path.multiChunk)
         let destination = output.appendingPathComponent("moved.bin")
         let before = try TreeSnapshot.capture(source)
-        let duringHash = provider.pauseRead(of: source, beforeChunk: 1)
+        let service = makeService()
+        let provider = provider!
+        let log = StateLog()
 
-        let (operation, log) = start(.move, source, to: destination)
-        let reached = await duringHash.waitUntilReached()
-        XCTAssertTrue(reached)
-        operation.cancel()
-        duringHash.release()
+        let operation = Task { () -> Error? in
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                try await service.move(source: source, destination: destination, provider: provider, onState: { log.append($0) })
+                return nil
+            } catch {
+                return error
+            }
+        }
         let error = await operation.value
 
         assertCancelled(error)
         XCTAssertFalse(log.didComplete)
         XCTAssertTrue(provider.moveCalls.isEmpty, "never renamed")
         XCTAssertTrue(provider.deleteCalls.isEmpty, "nothing deleted")
+        XCTAssertTrue(provider.readCalls.isEmpty, "nothing read")
         XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path), [])
         assertTree(source, matches: before, "source unchanged")
     }
@@ -295,11 +305,9 @@ final class FileOperationCancellationTests: XCTestCase {
         assertTree(source, matches: before, "source unchanged")
     }
 
-    /// The move's own check between "copy finished" and "delete source". With
-    /// checksums on, verification re-checks cancellation after its last read, so
-    /// this check is only reachable deterministically when nothing runs between
-    /// finalizing the copy and the delete: a cross-volume move with checksums off.
-    /// The harness cancels the task right after the copy was moved into place.
+    /// The move's own check between "copy finished" and "delete source": the
+    /// harness cancels the task right after the verified copy was moved into
+    /// place. (Checksums are off in Settings; since #28 the move verifies anyway.)
     func testCancelAfterCrossVolumeCopyIsFinalizedNeverDeletesTheSource() async throws {
         let volume = try makeScratchVolume(.apfs)
         let tree = try makeFixture()
@@ -325,28 +333,24 @@ final class FileOperationCancellationTests: XCTestCase {
         assertTree(source, matches: before, "source unchanged")
     }
 
-    func testCancelAfterSameVolumeRenameCompletesTheMoveWithChecksumSkipped() async throws {
+    /// #28: a same-volume move is an atomic rename with no hashing before or
+    /// after it (rename does not touch the data); it reports `.renamed`.
+    func testSameVolumeMoveIsARenameWithoutReadingTheData() async throws {
         let tree = try makeFixture()
         let source = tree.url(FixtureTree.Path.multiChunk)
         let destination = output.appendingPathComponent("moved.bin")
         let before = try TreeSnapshot.capture(source)
-        // The post-rename sanity hash reads the destination: pause in the middle of it.
-        let duringPostRenameHash = provider.pauseRead(of: destination, beforeChunk: 1)
 
         let (operation, log) = start(.move, source, to: destination)
-        let reached = await duringPostRenameHash.waitUntilReached()
-        XCTAssertTrue(reached)
-        XCTAssertEqual(provider.moveCalls.count, 1, "the rename has happened")
-        operation.cancel()
-        duringPostRenameHash.release()
         let error = await operation.value
 
-        // The rename cannot be undone safely, so the move is reported as done,
-        // honestly marked as not verified.
         XCTAssertNil(error)
-        guard case .complete(.skipped)? = log.states.last else {
-            return XCTFail("expected .complete(.skipped), got \(String(describing: log.states.last))")
+        guard case .complete(.renamed)? = log.states.last else {
+            return XCTFail("expected .complete(.renamed), got \(String(describing: log.states.last))")
         }
+        XCTAssertTrue(provider.readCalls.isEmpty, "no data read: \(provider.readCalls)")
+        XCTAssertTrue(provider.writerCalls.isEmpty, "no data written")
+        XCTAssertEqual(provider.moveCalls.count, 1, "one rename")
         XCTAssertFalse(fm.fileExists(atPath: source.path), "source path is gone")
         XCTAssertEqual(try fm.contentsOfDirectory(atPath: output.path), ["moved.bin"], "exactly one file, at the destination")
         assertTree(destination, matches: before, comparator: TreeComparator(checks: .data), "moved file intact")
