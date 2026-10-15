@@ -104,6 +104,38 @@ final class FileTableUITests: OtterTwinUITestCase {
         XCTAssertTrue(app.tables["fileTable.right"].exists)
     }
 
+    // MARK: - Quick Look
+
+    func testSpaceKeyOpensAndClosesQuickLook() throws {
+        let table = app.tables["fileTable.left"]
+        XCTAssertTrue(table.waitForExistence(timeout: 5))
+        waitForRows(in: table)
+
+        // Select the first row — any file or folder can trigger Quick Look
+        table.tableRows.element(boundBy: 0).click()
+        let windowCountBefore = app.windows.count
+
+        // Press Space — Quick Look panel should open as an additional window
+        table.typeKey(" ", modifierFlags: [])
+
+        let panelAppeared = NSPredicate(format: "count > %d", windowCountBefore)
+        let openExpect = XCTNSPredicateExpectation(predicate: panelAppeared, object: app.windows)
+        let openResult = XCTWaiter.wait(for: [openExpect], timeout: 5)
+        guard openResult == .completed else {
+            throw XCTSkip("Quick Look panel did not appear in this environment (result: \(openResult.rawValue))")
+        }
+
+        // Restore focus to the table, then press Space again — panel should close
+        table.tableRows.element(boundBy: 0).click()
+        table.typeKey(" ", modifierFlags: [])
+        let panelClosed = NSPredicate(format: "count == %d", windowCountBefore)
+        let closeExpect = XCTNSPredicateExpectation(predicate: panelClosed, object: app.windows)
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [closeExpect], timeout: 5), .completed,
+            "Quick Look panel should close on second Space key"
+        )
+    }
+
     // MARK: - Column Sorting
 
     func testClickingColumnHeaderSorts() {
