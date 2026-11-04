@@ -56,6 +56,15 @@ enum PartialCompletionIssue {
     case sourceNotRemoved(Error)
 }
 
+/// Why a cross-volume move kept its source after a verified copy (#54): the
+/// source changed (or was replaced) after it was copied, so deleting it could
+/// lose data that is not in the copy. Reported as `.sourceNotRemoved(…)`.
+struct SourceChangedAfterCopyError: Error, LocalizedError {
+    var errorDescription: String? {
+        "The source changed after it was copied, so it was kept. Check both files."
+    }
+}
+
 enum OperationError: Error {
     case checksumMismatch(sourceHash: String, destHash: String)
     case ioError(Error)

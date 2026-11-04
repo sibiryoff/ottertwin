@@ -83,8 +83,24 @@ final class SourceChangeDuringCopyTests: XCTestCase {
         case grow
         /// Same size, bytes after the current read position rewritten: only the mtime tells.
         case rewriteSameSize
+        /// Replaced by a rename (like `rsync -a` or `cp -p` via a temporary
+        /// file) with a file of the same size and mtime: only device and inode
+        /// tell. The copy keeps reading the old file through its open descriptor.
+        case replaceSameSizeAndMtime
+
+        /// What `.replaceSameSizeAndMtime` puts at the source path.
+        static let replacement = Data(repeating: 0x3C, count: SourceChangeDuringCopyTests.sourceSize)
 
         func apply(to url: URL) throws {
+            if self == .replaceSameSizeAndMtime {
+                let staging = url.deletingLastPathComponent().appendingPathComponent(".replacement.tmp")
+                try HarnessPOSIX.writeFile(staging.path, data: Self.replacement)
+                try HarnessPOSIX.setMtime(staging.path, SourceChangeDuringCopyTests.sourceMtime)
+                guard Darwin.rename(staging.path, url.path) == 0 else {
+                    throw HarnessError.posix("rename", staging.path)
+                }
+                return
+            }
             let handle = try FileHandle(forWritingTo: url)
             defer { try? handle.close() }  // test helper; the write itself already threw if it failed
             switch self {
@@ -96,6 +112,8 @@ final class SourceChangeDuringCopyTests: XCTestCase {
             case .rewriteSameSize:
                 try handle.seek(toOffset: UInt64(2 * SourceChangeDuringCopyTests.chunkSize))
                 try handle.write(contentsOf: Data(repeating: 0x5A, count: 1_000))
+            case .replaceSameSizeAndMtime:
+                break  // handled above
             }
             try handle.synchronize()
         }
@@ -212,6 +230,8 @@ final class SourceChangeDuringCopyTests: XCTestCase {
 
                     XCTAssertTrue(outcome.isSourceChanged, "\(label): \(String(describing: outcome.error))")
                     XCTAssertFalse(outcome.log.reportedSuccess, "\(label): never reported as success: \(outcome.log.states)")
+                    XCTAssertTrue(provider.verificationOpens.isEmpty,
+                                  "\(label): caught by the check after the last chunk, before verification")
                     if let original {
                         assertTree(destination, matches: original, comparator: TreeComparator(checks: .data),
                                    "\(label): original destination byte-identical")
@@ -283,6 +303,125 @@ final class SourceChangeDuringCopyTests: XCTestCase {
         XCTAssertTrue(fm.fileExists(atPath: source.path), "the source is kept")
         XCTAssertFalse(fm.fileExists(atPath: destination.path), "no destination created")
         assertContents(of: folder, are: [], "no partial file left")
+    }
+
+    /// A move whose source is replaced by a rename (same size, same mtime)
+    /// mid-copy fails, and the new file at the source path survives.
+    func testMoveKeepsASourceReplacedWithTheSameSizeAndMtime() async throws {
+        let label = "move-replaced"
+        let source = try makeSource(label)
+        let folder = try makeFolder(label)
+        let destination = folder.appendingPathComponent("moved.bin")
+        provider.moveErrors = [source: POSIXError(.EXDEV)]
+        let duringCopy = provider.pauseRead(of: source, beforeChunk: 1)
+        let operation = start(.move, source, to: destination, conflict: .skip, checksum: false)
+
+        let outcome = try await runChanging(source, by: .replaceSameSizeAndMtime, at: duringCopy, operation, label)
+
+        XCTAssertTrue(outcome.isSourceChanged, String(describing: outcome.error))
+        XCTAssertFalse(outcome.log.reportedSuccess, "never reported as success: \(outcome.log.states)")
+        XCTAssertTrue(provider.verificationOpens.isEmpty, "caught before verification")
+        XCTAssertTrue(provider.deleteCalls.isEmpty, "the source is not deleted")
+        XCTAssertEqual(try Data(contentsOf: source), Change.replacement, "the new file at the source path survives")
+        XCTAssertFalse(fm.fileExists(atPath: destination.path), "no destination created")
+        assertContents(of: folder, are: [], "no partial file left")
+    }
+
+    /// A move whose source changes while the copy is verified (the copy read
+    /// the whole, unchanged file): the check before `commit()` fails it, the
+    /// source is not deleted and the destination is untouched.
+    func testMoveKeepsASourceThatChangedDuringVerification() async throws {
+        for overwrite in [false, true] {
+            let label = "move-verification-\(overwrite ? "overwrite" : "new")"
+            resetProvider()
+            let source = try makeSource(label)
+            let folder = try makeFolder(label)
+            var original: TreeSnapshot?
+            let destination: URL
+            if overwrite {
+                let (url, snapshot) = try makeOriginal(in: folder)
+                destination = url
+                original = snapshot
+            } else {
+                destination = folder.appendingPathComponent("moved.bin")
+            }
+            provider.moveErrors = [source: POSIXError(.EXDEV)]
+            let atVerification = provider.pauseRead(of: destination, beforeChunk: 0)
+            let operation = start(.move, source, to: destination,
+                                  conflict: overwrite ? .overwrite : .skip, checksum: false)
+
+            let outcome = try await runChanging(source, by: .grow, at: atVerification, operation, label)
+
+            XCTAssertEqual(provider.verificationOpens.count, 1, "\(label): the copy reached verification")
+            XCTAssertTrue(outcome.isSourceChanged, "\(label): \(String(describing: outcome.error))")
+            XCTAssertFalse(outcome.log.reportedSuccess, "\(label): never reported as success: \(outcome.log.states)")
+            XCTAssertTrue(provider.deleteCalls.isEmpty, "\(label): the source is not deleted")
+            XCTAssertEqual(try HarnessPOSIX.lstat(source.path).st_size, Int64(Self.sourceSize + 5_000),
+                           "\(label): the changed source is kept")
+            if let original {
+                assertTree(destination, matches: original, comparator: TreeComparator(checks: .data),
+                           "\(label): original destination byte-identical")
+                assertContents(of: folder, are: ["existing.bin"], "\(label): no partial or .old file left")
+            } else {
+                XCTAssertFalse(fm.fileExists(atPath: destination.path), "\(label): no destination created")
+                assertContents(of: folder, are: [], "\(label): no partial file left")
+            }
+        }
+    }
+
+    /// The source changes after the copy was committed, right before a move
+    /// would delete it (`finalizeHooks` runs right after `commit()`): the
+    /// verified copy and the changed source are both kept, and the move ends
+    /// `.partiallyComplete(…, .sourceNotRemoved)`, not as a plain success.
+    func testMoveKeepsASourceThatChangedAfterTheCommit() async throws {
+        for change in [Change.grow, .replaceSameSizeAndMtime] {
+            let label = "move-after-commit-\(change.rawValue)"
+            resetProvider()
+            let source = try makeSource(label)
+            let copied = try TreeSnapshot.capture(source)
+            let folder = try makeFolder(label)
+            let destination = folder.appendingPathComponent("moved.bin")
+            provider.moveErrors = [source: POSIXError(.EXDEV)]
+            let hookErrors = HookErrors()
+            provider.finalizeHooks = [destination: {
+                do { try change.apply(to: source) } catch { hookErrors.record(error) }
+            }]
+
+            let outcome = await start(.move, source, to: destination, conflict: .skip, checksum: false).value
+
+            XCTAssertTrue(hookErrors.errors.isEmpty, "\(label): \(hookErrors.errors)")
+            XCTAssertNil(outcome.error, "\(label): not a failure")
+            guard case .partiallyComplete(let result, let issue)? = outcome.log.states.last else {
+                XCTFail("\(label): expected .partiallyComplete, got \(String(describing: outcome.log.states.last))")
+                continue
+            }
+            guard case .verified = result else {
+                XCTFail("\(label): expected a verified copy, got \(result)")
+                continue
+            }
+            guard case .sourceNotRemoved(let error) = issue else {
+                XCTFail("\(label): expected .sourceNotRemoved, got \(issue)")
+                continue
+            }
+            XCTAssertTrue(error is SourceChangedAfterCopyError, "\(label): \(error)")
+            XCTAssertFalse(outcome.log.states.contains { if case .complete = $0 { return true } else { return false } },
+                           "\(label): never reported as plain success")
+            XCTAssertTrue(provider.deleteCalls.isEmpty, "\(label): the source is not deleted")
+            XCTAssertTrue(fm.fileExists(atPath: source.path), "\(label): the changed source is kept")
+            if change == .replaceSameSizeAndMtime {
+                XCTAssertEqual(try Data(contentsOf: source), Change.replacement, "\(label): the new file survives")
+            }
+            assertTree(destination, matches: copied, comparator: TreeComparator(checks: .data),
+                       "\(label): the verified copy of the original source is kept")
+        }
+    }
+
+    /// Errors thrown inside a `finalizeHooks` closure.
+    final class HookErrors: @unchecked Sendable {
+        private let lock = NSLock()
+        private var _errors: [Error] = []
+        var errors: [Error] { lock.withLock { _errors } }
+        func record(_ error: Error) { lock.withLock { _errors.append(error) } }
     }
 
     /// Control: an unchanged source with the same old mtime copies and verifies as before.

@@ -105,10 +105,19 @@ actor FileOperationService {
         provider: any VFSProvider,
         onState: StateHandler
     ) async throws {
+        // What the copy starts from; compared again right before the source
+        // is deleted (#54).
+        try Task.checkCancellation()
+        let sourceAtStart: SourceState
+        do {
+            sourceAtStart = try Self.sourceState(of: source)
+        } catch {
+            throw OperationError.ioError(error)
+        }
         // The source is deleted below, so the copy must be verified.
         let result = try await performCopy(
             source: source, target: target,
-            provider: provider, alwaysVerify: true, onState: onState
+            provider: provider, alwaysVerify: true, sourceAtStart: sourceAtStart, onState: onState
         )
         let dest = target.url
         // Last point to cancel: the source has not been touched yet.
@@ -124,6 +133,14 @@ actor FileOperationService {
                 await removeIncompleteDestination(dest, provider: provider, reason: "move cancelled before source delete")
             }
             throw OperationError.cancelled
+        }
+        // #54: the source may have changed (or been replaced) after the last
+        // check, while the copy was committed. Deleting it then would lose data
+        // that was never copied: keep both and report a partial success.
+        if !Self.isSourceUnchanged(source, since: sourceAtStart) {
+            Self.logger.error("Move copied and verified \(dest.lastPathComponent, privacy: .private), but the source changed afterwards; it is not deleted")
+            onState(.partiallyComplete(result: result, issue: .sourceNotRemoved(SourceChangedAfterCopyError())))
+            return
         }
         do {
             try await provider.delete(source)
@@ -243,6 +260,7 @@ actor FileOperationService {
         target: Target,
         provider: any VFSProvider,
         alwaysVerify: Bool = false,
+        sourceAtStart knownSourceState: SourceState? = nil,
         onState: StateHandler
     ) async throws -> VerificationResult {
         let destination = target.url
@@ -253,11 +271,17 @@ actor FileOperationService {
         var bytesWritten: Int64 = 0
 
         try Task.checkCancellation()
+        // The caller may have recorded it already (a move compares it again
+        // before deleting the source).
         let sourceAtStart: SourceState
-        do {
-            sourceAtStart = try Self.sourceState(of: source)
-        } catch {
-            throw OperationError.ioError(error)
+        if let knownSourceState {
+            sourceAtStart = knownSourceState
+        } else {
+            do {
+                sourceAtStart = try Self.sourceState(of: source)
+            } catch {
+                throw OperationError.ioError(error)
+            }
         }
         let writer: ChunkedWriter
         do {
@@ -397,8 +421,14 @@ actor FileOperationService {
 
     // MARK: - Source changes (#54)
 
-    /// What the source looked like when the copy started.
+    /// What the source looked like when the copy started. Device and inode
+    /// catch a source that was replaced by a rename (e.g. `rsync -a`, `cp -p`
+    /// writing a temporary file) with the same size and mtime: the copy keeps
+    /// reading the old file. ctime is deliberately not compared: xattr writes
+    /// such as Finder tags change it without changing the data.
     private struct SourceState: Equatable {
+        let device: Int64
+        let inode: UInt64
         let size: Int64
         let modificationSeconds: Int
         let modificationNanoseconds: Int
@@ -410,7 +440,9 @@ actor FileOperationService {
         guard stat(url.path, &info) == 0 else {
             throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
         }
-        return SourceState(size: Int64(info.st_size),
+        return SourceState(device: Int64(info.st_dev),
+                           inode: UInt64(info.st_ino),
+                           size: Int64(info.st_size),
                            modificationSeconds: Int(info.st_mtimespec.tv_sec),
                            modificationNanoseconds: Int(info.st_mtimespec.tv_nsec))
     }
@@ -429,10 +461,23 @@ actor FileOperationService {
         }
         guard bytesCopied == start.size, now == start else {
             let startSize = start.size, nowSize = now.size
+            let replaced = now.device != start.device || now.inode != start.inode
             let mtimeChanged = now.modificationSeconds != start.modificationSeconds
                 || now.modificationNanoseconds != start.modificationNanoseconds
-            logger.error("Source changed during the copy (size \(startSize, privacy: .public) -> \(nowSize, privacy: .public), \(bytesCopied, privacy: .public) bytes copied, mtime changed: \(mtimeChanged, privacy: .public)); the copy is discarded")
+            logger.error("Source changed during the copy (size \(startSize, privacy: .public) -> \(nowSize, privacy: .public), \(bytesCopied, privacy: .public) bytes copied, mtime changed: \(mtimeChanged, privacy: .public), replaced: \(replaced, privacy: .public)); the copy is discarded")
             throw OperationError.sourceChanged
+        }
+    }
+
+    /// Whether a fresh `stat` of the source still matches `start` (no byte
+    /// count: used after the copy was committed). A source that cannot be
+    /// examined counts as changed.
+    private static func isSourceUnchanged(_ source: URL, since start: SourceState) -> Bool {
+        do {
+            return try sourceState(of: source) == start
+        } catch {
+            logger.error("Source could not be examined before deleting it: \(error.localizedDescription, privacy: .private)")
+            return false
         }
     }
 
