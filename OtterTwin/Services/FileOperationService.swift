@@ -80,8 +80,17 @@ actor FileOperationService {
                     return
                 } catch where Self.isCrossDeviceError(error) {
                     // The rename found the destination on another volume after
-                    // all (`EXDEV`; nothing was changed): move it the verified way.
+                    // all (`EXDEV`): move it the verified way, unless the
+                    // replaced original could not be put back (#52).
+                    if let refusal = Self.crossVolumeFallbackRefusal(after: error, target: target) {
+                        throw refusal
+                    }
                     Self.logger.info("Rename crossed volumes; moving by verified copy instead")
+                } catch let error where AtomicRename.parkedOriginal(in: error) != nil {
+                    // Any other failed replace that could not put the original
+                    // back: say where it is kept (#52). The source is kept.
+                    throw OperationError.originalNotRestored(
+                        parkedOriginal: AtomicRename.parkedOriginal(in: error), underlying: error)
                 }
             }
             try await self.performCrossVolumeMove(source: source, target: target,
@@ -517,6 +526,25 @@ actor FileOperationService {
             return underlying.domain == NSPOSIXErrorDomain && underlying.code == Int(EXDEV)
         }
         return false
+    }
+
+    /// #52: after an `EXDEV` rename for `.overwrite`, the verified-copy
+    /// fallback is safe only if nothing was changed, i.e. the original is
+    /// still at the destination. If the replace parked the original and could
+    /// not put it back (or nothing is at the destination any more), falling
+    /// back would copy into its place and delete the source while the
+    /// original survives only under a hidden `.old` name. Returns the error to
+    /// throw instead (with the original's location when known), or nil when
+    /// falling back is safe.
+    private static func crossVolumeFallbackRefusal(after error: Error, target: Target) -> OperationError? {
+        let parked = AtomicRename.parkedOriginal(in: error)
+        guard parked != nil || (target.replacesExisting && !itemExists(at: target.url)) else { return nil }
+        if let parked {
+            logger.error("Move failed and the replaced original could not be restored; it is kept as \(parked.lastPathComponent, privacy: .private). Not falling back to a copy; the source is kept")
+        } else {
+            logger.error("Move failed and nothing is at the destination any more; not falling back to a copy; the source is kept")
+        }
+        return .originalNotRestored(parkedOriginal: parked, underlying: error)
     }
 
     /// Whether anything is at `url`, without following symlinks: a dangling

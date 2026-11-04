@@ -4,12 +4,18 @@ final class LocalProvider: VFSProvider {
     /// Moves an item to the Trash and returns its new location, if known.
     typealias Trasher = (URL) throws -> URL?
 
+    /// Runs before each chunk read of `url` (source and verification reads).
+    typealias ReadObserver = @Sendable (_ url: URL) -> Void
+
     private let fm = FileManager.default
     private let trasher: Trasher
+    private let readObserver: ReadObserver?
 
     /// `trasher` is a seam for tests, so they never touch the real `~/.Trash`.
-    init(trasher: @escaping Trasher = LocalProvider.systemTrash) {
+    /// `readObserver` is a test hook (#52) that counts chunk reads; nil in production.
+    init(trasher: @escaping Trasher = LocalProvider.systemTrash, readObserver: ReadObserver? = nil) {
         self.trasher = trasher
+        self.readObserver = readObserver
     }
 
     /// The real macOS Trash via `FileManager.trashItem`.
@@ -45,28 +51,14 @@ final class LocalProvider: VFSProvider {
 
     // MARK: - Read chunks
 
+    /// Pull-based (#52, see `PullChunkStream`): one chunk is read per
+    /// `next()`, so the source is never read ahead of hashing and writing.
+    /// The file is opened on the first pull and closed after the last read:
+    /// at end of file, on error, on cancellation (#6), or when the consumer
+    /// stops early.
     func readChunks(of url: URL, chunkSize: Int) -> AsyncThrowingStream<Data, Error> {
-        AsyncThrowingStream { continuation in
-            let reader = Task.detached {
-                do {
-                    let access = try ScopedAccess(url: url)
-                    defer { access.stop() }
-                    let handle = try FileHandle(forReadingFrom: url)
-                    defer { try? handle.close() }
-                    while true {
-                        try Task.checkCancellation()
-                        let chunk = try handle.read(upToCount: chunkSize) ?? Data()
-                        if chunk.isEmpty { break }
-                        continuation.yield(chunk)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            // Stop reading and close the file as soon as the consumer goes away
-            // (e.g. its operation was cancelled, #6), instead of reading to EOF.
-            continuation.onTermination = { _ in reader.cancel() }
+        PullChunkStream.make(chunkSize: chunkSize, willRead: readHook(for: url)) {
+            try SourceFileReader(url: url)
         }
     }
 
@@ -81,7 +73,8 @@ final class LocalProvider: VFSProvider {
             access.stop()
             throw error
         }
-        return VerificationRead(chunks: reader.chunks(chunkSize: chunkSize, keepAlive: access),
+        return VerificationRead(chunks: reader.chunks(chunkSize: chunkSize, keepAlive: access,
+                                                      willRead: readHook(for: url)),
                                 cacheBypassed: reader.cacheBypassed)
     }
 
@@ -148,6 +141,11 @@ final class LocalProvider: VFSProvider {
 
     // MARK: - Private helpers
 
+    private func readHook(for url: URL) -> (@Sendable () -> Void)? {
+        guard let readObserver else { return nil }
+        return { readObserver(url) }
+    }
+
     private func makeFileItem(url: URL) throws -> FileItem {
         let rv = try url.resourceValues(forKeys: [
             .fileSizeKey, .contentModificationDateKey, .isDirectoryKey
@@ -159,5 +157,28 @@ final class LocalProvider: VFSProvider {
             modificationDate: rv.contentModificationDate ?? .distantPast,
             isDirectory: rv.isDirectory ?? false
         )
+    }
+}
+
+/// A source read (#52): a plain FileHandle. The scoped access lasts as long
+/// as the reader (`ScopedAccess` stops when released; `PullChunkStream`
+/// releases the reader right after closing it).
+private final class SourceFileReader: ChunkReader {
+    private let access: ScopedAccess
+    private let handle: FileHandle
+
+    init(url: URL) throws {
+        access = try ScopedAccess(url: url)
+        handle = try FileHandle(forReadingFrom: url)
+    }
+
+    func read(upToCount count: Int) throws -> Data? {
+        let chunk = try handle.read(upToCount: count) ?? Data()
+        return chunk.isEmpty ? nil : chunk
+    }
+
+    func close() {
+        // Read-only handle: nothing to flush, a close error cannot lose data.
+        try? handle.close()
     }
 }

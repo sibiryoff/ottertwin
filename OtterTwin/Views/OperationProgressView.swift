@@ -165,6 +165,20 @@ struct OperationProgressView: View {
         case .conflict(let url):
             Label("Conflict: \(url.lastPathComponent) already exists", systemImage: "doc.badge.plus")
                 .foregroundStyle(.orange)
+
+        case .originalNotRestored(let parked, let underlying):
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Move failed — the replaced item could not be put back", systemImage: "exclamationmark.octagon.fill")
+                    .foregroundStyle(.red)
+                    .font(.subheadline.bold())
+                Text(parked.map { "It is kept as \($0.path)" } ?? "It may be kept under a hidden .old name in the destination folder")
+                    .font(.caption)
+                    .textSelection(.enabled)
+                Text("The source was not moved. \(underlying.localizedDescription)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityIdentifier("progress.originalNotRestored")
         }
     }
 

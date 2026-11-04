@@ -119,32 +119,16 @@ struct VerificationRead {
     let cacheBypassed: Bool
 }
 
-extension UncachedFileReader {
-    /// The reader's chunks, read in a task of their own. The descriptor is
-    /// closed explicitly when the stream ends for any reason: end of file,
-    /// error, cancellation, or the consumer stopping early or dropping the
-    /// stream (`onTermination` cancels the task, which closes the descriptor
-    /// itself, so it is never closed while a read is in progress).
+extension UncachedFileReader: ChunkReader {
+    /// The reader's chunks, pull-based (#52, see `PullChunkStream`): one chunk
+    /// is read per `next()`, so verification never reads ahead of hashing.
+    /// The descriptor is closed explicitly when the stream ends for any
+    /// reason: end of file, error, cancellation, or the consumer stopping
+    /// early or dropping the stream; never while a read is in progress.
     /// `keepAlive` is retained until then (e.g. a scoped-access token).
-    func chunks(chunkSize: Int, keepAlive: AnyObject? = nil) -> AsyncThrowingStream<Data, Error> {
-        AsyncThrowingStream { continuation in
-            let task = Task.detached {
-                defer {
-                    self.close()
-                    withExtendedLifetime(keepAlive) {}
-                }
-                do {
-                    while true {
-                        try Task.checkCancellation()
-                        guard let chunk = try self.read(upToCount: chunkSize) else { break }
-                        continuation.yield(chunk)
-                    }
-                    continuation.finish()
-                } catch {
-                    continuation.finish(throwing: error)
-                }
-            }
-            continuation.onTermination = { _ in task.cancel() }
-        }
+    /// `willRead` runs before each read (a test hook for counting reads).
+    func chunks(chunkSize: Int, keepAlive: AnyObject? = nil,
+                willRead: (@Sendable () -> Void)? = nil) -> AsyncThrowingStream<Data, Error> {
+        PullChunkStream.make(chunkSize: chunkSize, keepAlive: keepAlive, willRead: willRead) { self }
     }
 }

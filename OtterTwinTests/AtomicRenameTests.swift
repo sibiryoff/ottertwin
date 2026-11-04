@@ -76,6 +76,40 @@ final class AtomicRenameTests: XCTestCase {
         XCTAssertFalse(fm.fileExists(atPath: backup.path), "no .old left")
     }
 
+    /// #52: when the original cannot be put back, the error keeps its code and
+    /// says where the original is kept.
+    func testFailedRestoreReportsWhereTheOriginalIsKept() throws {
+        let (destination, source, backup) = try makePair()
+        let rename = AtomicRename.withoutRenameFlags { from, _ in
+            if from.lastPathComponent == source.lastPathComponent { return EXDEV }
+            if from.lastPathComponent == backup.lastPathComponent { return EIO }
+            return nil
+        }
+
+        XCTAssertThrowsError(try rename.replace(destination, with: source, backup: backup)) { error in
+            XCTAssertEqual((error as? POSIXError)?.code, .EXDEV, "the move-in's error is reported")
+            XCTAssertEqual(AtomicRename.parkedOriginal(in: error)?.standardizedFileURL.path,
+                           backup.standardizedFileURL.path)
+        }
+        XCTAssertEqual(try Data(contentsOf: backup), original, "the original is kept, not deleted")
+        XCTAssertEqual(try Data(contentsOf: source), replacement)
+        XCTAssertFalse(fm.fileExists(atPath: destination.path))
+    }
+
+    func testRestoredOriginalIsNotReportedAsParked() throws {
+        let (destination, source, backup) = try makePair()
+        let rename = AtomicRename.withoutRenameFlags { from, _ in
+            from.lastPathComponent == source.lastPathComponent ? EXDEV : nil
+        }
+
+        XCTAssertThrowsError(try rename.replace(destination, with: source, backup: backup)) { error in
+            XCTAssertEqual((error as? POSIXError)?.code, .EXDEV)
+            XCTAssertNil(AtomicRename.parkedOriginal(in: error))
+        }
+        XCTAssertEqual(try Data(contentsOf: destination), original, "original restored")
+        XCTAssertFalse(fm.fileExists(atPath: backup.path))
+    }
+
     func testFallbackFailingToParkTheOriginalChangesNothing() throws {
         let (destination, source, backup) = try makePair()
         let rename = AtomicRename.withoutRenameFlags { _, to in
