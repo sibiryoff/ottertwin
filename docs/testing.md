@@ -186,6 +186,20 @@ failed rename). Exception (#52): for `.overwrite`, if the original destination w
 fall back. It fails with `OperationError.originalNotRestored(parkedOriginal:underlying:)`, which names
 where the original is kept (`AtomicRename.parkedOriginal(in:)`), and the source is kept.
 
+Source changes (#54): both hashes cover only the bytes that were read, so a copy also checks that the
+source did not change. Its device, inode, size and mtime (`stat`) are recorded before reading; after
+the last chunk and again right before `commit()`, the bytes copied must equal that size and a fresh
+`stat` must match (device and inode catch a source replaced by a rename with the same size and
+mtime; ctime is not compared, since xattr writes such as Finder tags change it). Otherwise the copy
+fails with `OperationError.sourceChanged`: the temporary file is discarded, the destination is
+untouched and a move keeps its source. A cross-volume move compares once more right before deleting
+the source; if it changed, both are kept and the move ends
+`.partiallyComplete(…, .sourceNotRemoved(SourceChangedAfterCopyError))`. A copy-overwrite whose
+commit fails and whose restore fails reports `.originalNotRestored(parkedOriginal:underlying:)`, as
+moves do. Tests: `SourceChangeDuringCopyTests` (truncate, grow, same-size rewrite, replace by rename
+at a pause point; during verification; moves, including a change after the commit via
+`finalizeHooks`; and the failed restore).
+
 Bounded read-ahead (#52): source reads (`LocalProvider.readChunks`) and verification reads
 (`UncachedFileReader.chunks`) are pull-based (`PullChunkStream`): one chunk is read per `next()`, so
 the reader is never ahead of hashing and writing, and a multi-GB file is never buffered in memory.
