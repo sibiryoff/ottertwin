@@ -181,7 +181,15 @@ destination folder (`stat`, so a folder that is a symlink to another volume coun
 `LocalProvider.move` is a pure rename (`AtomicRename.moveExclusively`), never
 `FileManager.moveItem`, which silently copies and deletes across volumes: a rename between volumes
 fails with `EXDEV`, and the move then falls back to the verified copy (nothing was changed by the
-failed rename).
+failed rename). Exception (#52): for `.overwrite`, if the original destination was parked under its
+`.old` name and could not be put back (or nothing is at the destination any more), the move does not
+fall back. It fails with `OperationError.originalNotRestored(parkedOriginal:underlying:)`, which names
+where the original is kept (`AtomicRename.parkedOriginal(in:)`), and the source is kept.
+
+Bounded read-ahead (#52): source reads (`LocalProvider.readChunks`) and verification reads
+(`UncachedFileReader.chunks`) are pull-based (`PullChunkStream`): one chunk is read per `next()`, so
+the reader is never ahead of hashing and writing, and a multi-GB file is never buffered in memory.
+`LocalProvider(readObserver:)` counts chunk reads for tests.
 
 Limits (not something the client can fix):
 

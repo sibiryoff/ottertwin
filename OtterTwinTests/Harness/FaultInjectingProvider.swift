@@ -377,7 +377,7 @@ final class FaultInjectingProvider: VFSProvider, @unchecked Sendable {
     /// Mutable state of one pull-based read stream. Only touched by the
     /// stream's consumer, one `next()` at a time. The file is opened on the
     /// first pull and read one chunk per pull, so nothing is read ahead of the
-    /// consumer (unlike `LocalProvider.readChunks`, which buffers ahead).
+    /// consumer (like `LocalProvider.readChunks` since #52, `PullChunkStream`).
     private final class ReadState: @unchecked Sendable {
         let url: URL
         let chunkSize: Int

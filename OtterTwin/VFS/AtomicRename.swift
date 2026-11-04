@@ -53,7 +53,8 @@ struct AtomicRename {
     /// Replaces the item at `destination` with `source` (same folder, same
     /// volume). `backup` is an unused, operation-unique name in the same folder
     /// that the fallback parks the original under; it never remains afterwards
-    /// unless restoring the original failed (logged as a fault).
+    /// unless restoring the original failed (logged as a fault, and the thrown
+    /// error carries the location: `parkedOriginal(in:)`, #52).
     ///
     /// If the original disappeared meanwhile, `source` is moved into place
     /// exclusively instead. On error the original is in place, unchanged, and
@@ -108,8 +109,9 @@ struct AtomicRename {
         do {
             try moveExclusively(from: source, to: destination)
         } catch {
-            restoreOriginal(from: backup, to: destination)
-            throw error
+            if restoreOriginal(from: backup, to: destination) { throw error }
+            // The original stays under `backup`: say so in the error (#52).
+            throw Self.reportingParkedOriginal(backup, in: error)
         }
         // 3: the new file is in place; remove the original.
         removeReplacedOriginal(at: backup)
@@ -130,13 +132,35 @@ struct AtomicRename {
 
     /// Called while an error is being thrown; that error is what gets reported.
     /// If the original cannot be put back, it is kept under its backup name and
-    /// that is logged as a fault (never deleted).
-    private func restoreOriginal(from backup: URL, to destination: URL) {
+    /// that is logged as a fault (never deleted); returns false then.
+    private func restoreOriginal(from backup: URL, to destination: URL) -> Bool {
         do {
             try moveExclusively(from: backup, to: destination)
+            return true
         } catch {
             Self.logger.fault("Could not restore the original to \(destination.lastPathComponent, privacy: .private); it is kept as \(backup.lastPathComponent, privacy: .private): \(error.localizedDescription, privacy: .private)")
+            return false
         }
+    }
+
+    /// `userInfo` key of the error `replace` throws when the original could not
+    /// be put back (#52): the URL the original is kept under.
+    static let parkedOriginalKey = "OtterTwinParkedOriginalURL"
+
+    /// Where the original is kept, if `error` is from a `replace` that could
+    /// not put it back; nil otherwise.
+    static func parkedOriginal(in error: Error) -> URL? {
+        (error as NSError).userInfo[parkedOriginalKey] as? URL
+    }
+
+    /// The same error (same code, so callers that check it still can), with
+    /// the backup location added. `moveExclusively` throws only POSIX errors;
+    /// any other error is passed on unchanged.
+    private static func reportingParkedOriginal(_ backup: URL, in error: Error) -> Error {
+        guard let posix = error as? POSIXError else { return error }
+        var info = (posix as NSError).userInfo
+        info[parkedOriginalKey] = backup
+        return POSIXError(posix.code, userInfo: info)
     }
 
     static func isUnsupported(_ code: Int32) -> Bool {

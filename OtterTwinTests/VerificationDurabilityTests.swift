@@ -312,6 +312,53 @@ final class VerificationDurabilityTests: XCTestCase {
         }
     }
 
+    /// #52: a same-volume `.overwrite` move parks the original under its `.old`
+    /// name, the move-in fails with `EXDEV` and putting the original back
+    /// fails too. The move must not fall back to a copy into the original's
+    /// place: it fails (never reported as success), names where the original
+    /// is kept, and the source is not deleted.
+    func testRenameThatCrossesVolumesAfterAFailedRestoreDoesNotFallBack() async throws {
+        let source = try makeSource("exdev-restore.bin")
+        let before = try TreeSnapshot.capture(source)
+        let destination = tempDir.appendingPathComponent("moved.bin")
+        let original = Data("original destination".utf8)
+        try HarnessPOSIX.writeFile(destination.path, data: original)
+        let sourceName = source.lastPathComponent
+        provider.rename = .withoutRenameFlags { from, _ in
+            if from.lastPathComponent == sourceName { return EXDEV }  // the move-in crosses volumes
+            if ChunkedWriter.isParkedOriginalFileName(from.lastPathComponent) { return EIO }  // the restore fails
+            return nil
+        }
+
+        let outcome = await move(source, to: destination, conflict: .overwrite)
+
+        guard case .originalNotRestored(let parked, let underlying)? = outcome.error as? OperationError else {
+            return XCTFail("expected OperationError.originalNotRestored, got \(String(describing: outcome.error))")
+        }
+        XCTAssertEqual((underlying as? POSIXError)?.code, .EXDEV, "\(underlying)")
+        XCTAssertFalse(outcome.states.contains { state in
+            switch state {
+            case .complete, .partiallyComplete: return true
+            default: return false
+            }
+        }, "never reported as success: \(outcome.states)")
+        // The source is untouched: no copy was started, nothing was deleted.
+        XCTAssertEqual(provider.replaceCalls.count, 1)
+        XCTAssertTrue(provider.writerCalls.isEmpty, "no fallback copy")
+        XCTAssertTrue(provider.verificationOpens.isEmpty, "no fallback copy")
+        XCTAssertTrue(provider.deleteCalls.isEmpty, "the source is not deleted")
+        assertTree(source, matches: before, "source intact")
+        // The original is kept, where the error says.
+        let parkedURL = try XCTUnwrap(parked, "the error names where the original is kept")
+        XCTAssertTrue(ChunkedWriter.isParkedOriginalFileName(parkedURL.lastPathComponent), parkedURL.lastPathComponent)
+        XCTAssertEqual(parkedURL.deletingLastPathComponent().standardizedFileURL.path,
+                       tempDir.standardizedFileURL.path, "in the destination folder")
+        XCTAssertEqual(try Data(contentsOf: parkedURL), original, "the original survives, byte-identical")
+        XCTAssertFalse(fm.fileExists(atPath: destination.path), "nothing was copied into the original's place")
+        XCTAssertEqual(try fm.contentsOfDirectory(atPath: tempDir.path).filter(ChunkedWriter.isDiscardablePartialFileName),
+                       [], "no partial file left")
+    }
+
     /// `LocalProvider.move` is a rename only: across volumes it throws `EXDEV`
     /// and copies nothing (`FileManager.moveItem` would copy and delete).
     func testLocalProviderMoveAcrossVolumesThrowsInsteadOfCopying() async throws {
