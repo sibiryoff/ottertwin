@@ -167,28 +167,50 @@ struct OperationProgressView: View {
                 .foregroundStyle(.orange)
 
         case .originalNotRestored(let parked, let underlying):
+            let text = originalNotRestoredText(parked: parked)
             VStack(alignment: .leading, spacing: 4) {
-                if let parked {
-                    Label("Move failed — the replaced item could not be put back", systemImage: "exclamationmark.octagon.fill")
-                        .foregroundStyle(.red)
-                        .font(.subheadline.bold())
-                    Text("It is kept as \(parked.path); the source was not moved.")
-                        .font(.caption)
-                        .textSelection(.enabled)
-                } else {
-                    // Nothing was parked: the destination item had vanished.
-                    Label("Move failed", systemImage: "exclamationmark.octagon.fill")
-                        .foregroundStyle(.red)
-                        .font(.subheadline.bold())
-                    Text("The destination item is no longer there; the source was not moved.")
-                        .font(.caption)
-                }
+                Label(text.title, systemImage: "exclamationmark.octagon.fill")
+                    .foregroundStyle(.red)
+                    .font(.subheadline.bold())
+                Text(text.detail)
+                    .font(.caption)
+                    .textSelection(.enabled)
                 Text(underlying.localizedDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
             .accessibilityIdentifier("progress.originalNotRestored")
+
+        case .sourceChanged:
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Source changed while it was being copied", systemImage: "exclamationmark.octagon.fill")
+                    .foregroundStyle(.red)
+                    .font(.subheadline.bold())
+                Text(sourceChangedDetail)
+                    .font(.caption)
+            }
+            .accessibilityIdentifier("progress.sourceChanged")
         }
+    }
+
+    /// #52 (moves) and #54 (copies): the replaced original could not be put
+    /// back (`parked`: where it is kept), or it was no longer there.
+    private func originalNotRestoredText(parked: URL?) -> (title: String, detail: String) {
+        let isCopy = operation.kind == .copy
+        let failed = isCopy ? "Copy failed" : "Move failed"
+        let sourceNote = isCopy ? "" : " The source was not moved."
+        if let parked {
+            return ("\(failed) — the replaced item could not be put back",
+                    "It is kept as \(parked.path).\(sourceNote)")
+        }
+        // Nothing was parked: the destination item had vanished.
+        return (failed, "The destination item is no longer there.\(sourceNote)")
+    }
+
+    /// #54: the copy was discarded; nothing was changed at the destination.
+    private var sourceChangedDetail: String {
+        let sourceNote = operation.kind == .copy ? "" : " The source was not removed."
+        return "Its size or modification date changed during the copy, so the copy was discarded and the destination was left unchanged.\(sourceNote) Try again once the file is no longer being changed."
     }
 
     private func hashRow(label: String, hash: String, match: Bool) -> some View {

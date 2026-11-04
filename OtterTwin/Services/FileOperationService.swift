@@ -230,6 +230,14 @@ actor FileOperationService {
     /// and closed (`finishWriting()`), then read back through a new descriptor
     /// with `F_NOCACHE` (`openForVerification`). The copy is verified when
     /// `checksumEnabled` is on, or always with `alwaysVerify` (moves).
+    ///
+    /// Source changes (#54): both hashes are computed over the bytes that were
+    /// actually read, so a source that shrinks, grows or is rewritten during
+    /// the copy would otherwise give a "verified" copy of a mix. The source's
+    /// size and mtime are recorded before reading; after the last chunk (before
+    /// `finishWriting()`) and again right before `commit()`, the bytes copied
+    /// must equal that size and a fresh `stat` must match. Otherwise the copy
+    /// fails with `.sourceChanged` and only the temporary file is discarded.
     private func performCopy(
         source: URL,
         target: Target,
@@ -245,6 +253,12 @@ actor FileOperationService {
         var bytesWritten: Int64 = 0
 
         try Task.checkCancellation()
+        let sourceAtStart: SourceState
+        do {
+            sourceAtStart = try Self.sourceState(of: source)
+        } catch {
+            throw OperationError.ioError(error)
+        }
         let writer: ChunkedWriter
         do {
             writer = try provider.makeWriter(at: destination, replacingExisting: target.replacesExisting)
@@ -269,10 +283,14 @@ actor FileOperationService {
             // A cancelled task can end a provider's stream early *without*
             // throwing; never finalize a file that may be truncated.
             try Task.checkCancellation()
+            try Self.checkSourceUnchanged(source, since: sourceAtStart, bytesCopied: bytesWritten)
             flushMode = try writer.finishWriting()
         } catch is CancellationError {
             writer.abort()
             throw OperationError.cancelled
+        } catch let error as OperationError {
+            writer.abort()
+            throw error
         } catch {
             writer.abort()
             throw OperationError.ioError(error)
@@ -299,12 +317,26 @@ actor FileOperationService {
         // Last point to cancel: the destination has not been touched yet.
         do {
             try Task.checkCancellation()
+            // The source may have changed while the copy was verified (#54):
+            // a move would then delete data that was never copied.
+            try Self.checkSourceUnchanged(source, since: sourceAtStart, bytesCopied: bytesWritten)
             try writer.commit()
         } catch is CancellationError {
             writer.abort()
             throw OperationError.cancelled
-        } catch {
+        } catch let error as OperationError {
             writer.abort()
+            throw error
+        } catch {
+            // `abort()` removes only the temporary file (the new copy; the
+            // source still has its data), never a parked original.
+            writer.abort()
+            if let parked = AtomicRename.parkedOriginal(in: error) {
+                // The replace parked the original and could not put it back
+                // (#54, as for moves in #52): say where it is kept.
+                Self.logger.error("Copy failed and the replaced original could not be restored; it is kept as \(parked.lastPathComponent, privacy: .private)")
+                throw OperationError.originalNotRestored(parkedOriginal: parked, underlying: error)
+            }
             if Self.isFileExistsError(error) { throw OperationError.conflict(existingURL: destination) }
             throw OperationError.ioError(error)
         }
@@ -360,6 +392,47 @@ actor FileOperationService {
             try await provider.delete(destination)
         } catch {
             Self.logger.error("Could not remove unverified destination \(destination.lastPathComponent, privacy: .private) (\(reason, privacy: .public)): \(error.localizedDescription, privacy: .private)")
+        }
+    }
+
+    // MARK: - Source changes (#54)
+
+    /// What the source looked like when the copy started.
+    private struct SourceState: Equatable {
+        let size: Int64
+        let modificationSeconds: Int
+        let modificationNanoseconds: Int
+    }
+
+    /// `stat` of `url` (following symlinks, as the source read does).
+    private static func sourceState(of url: URL) throws -> SourceState {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        return SourceState(size: Int64(info.st_size),
+                           modificationSeconds: Int(info.st_mtimespec.tv_sec),
+                           modificationNanoseconds: Int(info.st_mtimespec.tv_nsec))
+    }
+
+    /// Throws `.sourceChanged` unless exactly `start.size` bytes were copied
+    /// and a fresh `stat` of the source still shows that size and mtime. A
+    /// source that is gone (or can no longer be examined) counts as changed:
+    /// the copy cannot be shown to match it.
+    private static func checkSourceUnchanged(_ source: URL, since start: SourceState, bytesCopied: Int64) throws {
+        let now: SourceState
+        do {
+            now = try sourceState(of: source)
+        } catch {
+            logger.error("Source could not be examined after the copy: \(error.localizedDescription, privacy: .private)")
+            throw OperationError.sourceChanged
+        }
+        guard bytesCopied == start.size, now == start else {
+            let startSize = start.size, nowSize = now.size
+            let mtimeChanged = now.modificationSeconds != start.modificationSeconds
+                || now.modificationNanoseconds != start.modificationNanoseconds
+            logger.error("Source changed during the copy (size \(startSize, privacy: .public) -> \(nowSize, privacy: .public), \(bytesCopied, privacy: .public) bytes copied, mtime changed: \(mtimeChanged, privacy: .public)); the copy is discarded")
+            throw OperationError.sourceChanged
         }
     }
 

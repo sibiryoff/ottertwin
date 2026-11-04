@@ -186,6 +186,15 @@ failed rename). Exception (#52): for `.overwrite`, if the original destination w
 fall back. It fails with `OperationError.originalNotRestored(parkedOriginal:underlying:)`, which names
 where the original is kept (`AtomicRename.parkedOriginal(in:)`), and the source is kept.
 
+Source changes (#54): both hashes cover only the bytes that were read, so a copy also checks that the
+source did not change. Its size and mtime (`stat`) are recorded before reading; after the last chunk
+and again right before `commit()`, the bytes copied must equal that size and a fresh `stat` must
+match. Otherwise the copy fails with `OperationError.sourceChanged`: the temporary file is discarded,
+the destination is untouched and a move keeps its source. A copy-overwrite whose commit fails and
+whose restore fails reports `.originalNotRestored(parkedOriginal:underlying:)`, as moves do.
+Tests: `SourceChangeDuringCopyTests` (truncate, grow, same-size rewrite at a pause point, during
+verification, a move, and the failed restore).
+
 Bounded read-ahead (#52): source reads (`LocalProvider.readChunks`) and verification reads
 (`UncachedFileReader.chunks`) are pull-based (`PullChunkStream`): one chunk is read per `next()`, so
 the reader is never ahead of hashing and writing, and a multi-GB file is never buffered in memory.
