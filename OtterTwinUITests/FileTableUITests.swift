@@ -1,20 +1,24 @@
 import XCTest
 
+/// Both panels start in the base class's temp fixture folder (#44), never the
+/// real home folder, so the row clicks below only ever touch fixture files.
 final class FileTableUITests: OtterTwinUITestCase {
     // MARK: - Content Loading
 
-    func testLeftTableLoadsHomeDirectory() {
+    func testLeftTableLoadsStartDirectory() {
         let table = app.tables["fileTable.left"]
         XCTAssertTrue(table.waitForExistence(timeout: 5))
         waitForRows(in: table)
         XCTAssertGreaterThan(table.tableRows.count, 0)
+        assertShowsFixture(table)
     }
 
-    func testRightTableLoadsHomeDirectory() {
+    func testRightTableLoadsStartDirectory() {
         let table = app.tables["fileTable.right"]
         XCTAssertTrue(table.waitForExistence(timeout: 5))
         waitForRows(in: table)
         XCTAssertGreaterThan(table.tableRows.count, 0)
+        assertShowsFixture(table)
     }
 
     // MARK: - Row Selection

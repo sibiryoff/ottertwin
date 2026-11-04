@@ -8,6 +8,15 @@ File-operation code (copy, move, delete, verify) must be tested with the **data-
 below (`docs/agent-workflow.md`, section 3). Its own self-tests and the characterization tests of
 the current behaviour are in `OtterTwinTests/HarnessTests/`.
 
+UI tests (`OtterTwinUITests/`, XCUITest) run in the non-blocking `ui-tests` job. They never see the
+real home folder: `OtterTwinUITestCase` creates a unique temp folder with a few fixture entries
+(`fixtureEntries`) for every test, launches the app with `OTTERTWIN_UITEST_START_DIR` set to it
+(both panels start there; Debug builds only, see `AppState.startDirectory`) and removes it in
+`tearDown`. A test that needs other files may point the variable at its own temp folder in
+`configure(_:)`. Before clicking rows, call `assertShowsFixture(_:)`; `fixtureTreeContents()`
+proves an action changed nothing. Without the variable the app opens the home folder
+(`StartDirectoryTests`).
+
 ## The data-safety harness (`OtterTwinTests/Harness/`)
 
 All harness code is test-only. Production code has one documented test hook: `ChunkedWriter`
