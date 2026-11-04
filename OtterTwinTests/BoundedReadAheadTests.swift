@@ -18,6 +18,8 @@ final class BoundedReadAheadTests: XCTestCase {
     /// received. The readers are pull-based (they read only the chunk being
     /// asked for), so they actually stay at 0.
     private static let maxChunksAhead = 1
+    /// The fixture is `chunkCount` full chunks plus a 7-byte tail.
+    private static let expectedChunks = chunkCount + 1
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -58,6 +60,8 @@ final class BoundedReadAheadTests: XCTestCase {
             // in far less than this first pause.
             let pause: UInt64 = chunksReceived == 1 ? 300_000_000 : 1_000_000
             try await Task.sleep(nanoseconds: pause)
+            // The hook must actually count: at least one read per chunk received.
+            XCTAssertGreaterThanOrEqual(reads.count, chunksReceived, label)
             let ahead = reads.count - chunksReceived
             worstAhead = max(worstAhead, ahead)
             XCTAssertLessThanOrEqual(ahead, Self.maxChunksAhead,
@@ -65,6 +69,9 @@ final class BoundedReadAheadTests: XCTestCase {
             if ahead > Self.maxChunksAhead { break }  // one failure is enough
         }
         XCTAssertLessThanOrEqual(worstAhead, Self.maxChunksAhead, label)
+        XCTAssertEqual(chunksReceived, Self.expectedChunks, "\(label): chunks received")
+        XCTAssertEqual(reads.count, Self.expectedChunks + 1,
+                       "\(label): one read per chunk, plus the read that found end of file")
         return received
     }
 
@@ -167,6 +174,34 @@ final class BoundedReadAheadTests: XCTestCase {
         XCTAssertFalse(reader.readAfterClose)
     }
 
+    func testPreOpenedReaderIsClosedWhenTheStreamIsDroppedBeforeTheFirstPull() {
+        let reader = FakeChunkReader(chunks: 3)
+        makeAndDropStream(opened: reader)
+
+        XCTAssertEqual(reader.reads, 0)
+        XCTAssertEqual(reader.closeCount, 1, "closed explicitly, not left to deallocation")
+    }
+
+    func testPreOpenedReaderIsClosedWhenTheConsumerIsCancelledBeforeTheFirstPull() async throws {
+        let reader = FakeChunkReader(chunks: 3)
+        let stream = PullChunkStream.make(opened: reader, chunkSize: 4)
+        let task = Task { () -> Int in
+            withUnsafeCurrentTask { $0?.cancel() }
+            var count = 0
+            do {
+                for try await _ in stream { count += 1 }
+            } catch {
+                // CancellationError or a silent end; either is fine here.
+            }
+            return count
+        }
+        let count = await task.value
+
+        XCTAssertEqual(count, 0)
+        XCTAssertEqual(reader.reads, 0, "nothing read after the cancel")
+        XCTAssertEqual(reader.closeCount, 1)
+    }
+
     func testOpenErrorIsTheStreamsError() async throws {
         let fault = InjectedFault(message: "open failed")
         let stream = PullChunkStream.make(chunkSize: 4) { () throws -> any ChunkReader in throw fault }
@@ -187,6 +222,11 @@ final class BoundedReadAheadTests: XCTestCase {
         } catch {
             // Any open error; what matters is that it is not a silent, empty end.
         }
+    }
+
+    /// Makes a stream for an already open reader and releases it unused.
+    private func makeAndDropStream(opened reader: FakeChunkReader) {
+        _ = PullChunkStream.make(opened: reader, chunkSize: 4)
     }
 
     /// Takes `count` chunks, then stops; the stream is released when this returns.

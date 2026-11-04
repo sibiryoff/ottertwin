@@ -22,7 +22,7 @@ protocol ChunkReader: AnyObject {
 /// writing and hold a large part of a multi-GB file in memory.
 ///
 /// Reader lifetime: `open` runs on the first pull; its error is the stream's
-/// error. The reader is closed exactly once, after its last read:
+/// error (or the reader is already open: `make(opened:…)`). The reader is closed exactly once, after its last read:
 /// - at end of file, or when a read throws;
 /// - when the consuming task is cancelled: the next pull throws
 ///   `CancellationError` without reading;
@@ -37,7 +37,23 @@ enum PullChunkStream {
         willRead: (@Sendable () -> Void)? = nil,
         open: @escaping () throws -> any ChunkReader
     ) -> AsyncThrowingStream<Data, Error> {
-        let state = PullState(chunkSize: chunkSize, keepAlive: keepAlive, willRead: willRead, open: open)
+        let state = PullState(chunkSize: chunkSize, keepAlive: keepAlive, willRead: willRead,
+                              reader: nil, open: open)
+        return AsyncThrowingStream<Data, Error>(unfolding: { try state.next() })
+    }
+
+    /// The same for a reader that is already open (e.g. a verification read,
+    /// whose descriptor is opened before the stream exists). The stream owns
+    /// it from the start, so it is closed explicitly even if the stream is
+    /// dropped, or its consumer cancelled, before the first pull.
+    static func make(
+        opened reader: any ChunkReader,
+        chunkSize: Int,
+        keepAlive: AnyObject? = nil,
+        willRead: (@Sendable () -> Void)? = nil
+    ) -> AsyncThrowingStream<Data, Error> {
+        let state = PullState(chunkSize: chunkSize, keepAlive: keepAlive, willRead: willRead,
+                              reader: reader, open: nil)
         return AsyncThrowingStream<Data, Error>(unfolding: { try state.next() })
     }
 }
@@ -53,11 +69,13 @@ private final class PullState: @unchecked Sendable {
     private var keepAlive: AnyObject?
     private var finished = false
 
+    /// Exactly one of `reader` (already open) and `open` (opens on the first pull) is non-nil.
     init(chunkSize: Int, keepAlive: AnyObject?, willRead: (@Sendable () -> Void)?,
-         open: @escaping () throws -> any ChunkReader) {
+         reader: (any ChunkReader)?, open: (() throws -> any ChunkReader)?) {
         self.chunkSize = chunkSize
         self.keepAlive = keepAlive
         self.willRead = willRead
+        self.reader = reader
         self.open = open
     }
 

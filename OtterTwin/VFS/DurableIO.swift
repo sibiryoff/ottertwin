@@ -122,13 +122,14 @@ struct VerificationRead {
 extension UncachedFileReader: ChunkReader {
     /// The reader's chunks, pull-based (#52, see `PullChunkStream`): one chunk
     /// is read per `next()`, so verification never reads ahead of hashing.
-    /// The descriptor is closed explicitly when the stream ends for any
-    /// reason: end of file, error, cancellation, or the consumer stopping
-    /// early or dropping the stream; never while a read is in progress.
+    /// The stream owns the (already open) descriptor from the moment it is
+    /// made and closes it explicitly when it ends for any reason: end of
+    /// file, error, cancellation, or the consumer stopping early or dropping
+    /// the stream, also before the first pull; never while a read is in progress.
     /// `keepAlive` is retained until then (e.g. a scoped-access token).
     /// `willRead` runs before each read (a test hook for counting reads).
     func chunks(chunkSize: Int, keepAlive: AnyObject? = nil,
                 willRead: (@Sendable () -> Void)? = nil) -> AsyncThrowingStream<Data, Error> {
-        PullChunkStream.make(chunkSize: chunkSize, keepAlive: keepAlive, willRead: willRead) { self }
+        PullChunkStream.make(opened: self, chunkSize: chunkSize, keepAlive: keepAlive, willRead: willRead)
     }
 }

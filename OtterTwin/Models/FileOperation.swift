@@ -61,10 +61,12 @@ enum OperationError: Error {
     case ioError(Error)
     case cancelled
     case conflict(existingURL: URL)
-    /// A same-volume `.overwrite` move failed after the original destination
-    /// was parked under a hidden `.old` name, and putting it back failed too
-    /// (#52). The source is kept. `parkedOriginal` is where the original is
-    /// now (nil if unknown); `underlying` is why the move failed.
+    /// A same-volume `.overwrite` move failed and the original destination is
+    /// not in its place (#52); the move did not fall back to a copy and the
+    /// source is kept. `parkedOriginal`: the original was parked under a
+    /// hidden `.old` name and putting it back failed; this is where it is now.
+    /// nil: nothing was parked, the destination item was simply no longer
+    /// there. `underlying` is why the move failed.
     case originalNotRestored(parkedOriginal: URL?, underlying: Error)
 }
 
