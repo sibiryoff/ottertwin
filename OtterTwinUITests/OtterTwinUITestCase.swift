@@ -1,13 +1,52 @@
 import XCTest
 
+/// Base class for all UI tests.
+///
+/// Every test launches the app with both panels in a unique, disposable temp
+/// folder (`fixtureDirectory`, passed via `OTTERTWIN_UITEST_START_DIR`), never in
+/// the real home folder (#44, `docs/agent-workflow.md` §5). The folder holds
+/// `fixtureEntries` and is removed in `tearDown`. A subclass may point the app
+/// at its own temp folder in `configure(_:)`; it then owns that folder's cleanup.
 class OtterTwinUITestCase: XCTestCase {
+    static let startDirectoryEnvironmentKey = "OTTERTWIN_UITEST_START_DIR"
+
+    /// Top-level names in `fixtureDirectory`, in the order the panel lists them
+    /// (folders first, then files by name). No name starts with `c`, so typing `c`
+    /// cannot type-select a row.
+    static let fixtureEntries = ["Folder A", "alpha.txt", "beta.txt", "gamma.txt"]
+
     var app: XCUIApplication!
+    /// The temp folder both panels start in, unless `configure(_:)` replaces it.
+    private(set) var fixtureDirectory: URL!
 
     override func setUp() {
         super.setUp()
         continueAfterFailure = false
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OtterTwinUITests-\(UUID().uuidString)", isDirectory: true)
+        fixtureDirectory = dir
+        do {
+            try OtterTwinUITestCase.createFixtures(in: dir)
+        } catch {
+            // continueAfterFailure is false: the test stops here, before any launch.
+            XCTFail("Could not create the UI-test fixture folder \(dir.path): \(error)")
+            return
+        }
+
         app = XCUIApplication()
+        app.launchEnvironment[Self.startDirectoryEnvironmentKey] = dir.path
         configure(app)
+
+        // Refuse to launch if a subclass removed or blanked the start folder: the
+        // app would then open the real home folder.
+        let start = app.launchEnvironment[Self.startDirectoryEnvironmentKey] ?? ""
+        guard !start.isEmpty,
+              URL(fileURLWithPath: start).standardizedFileURL.path
+                != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path else {
+            XCTFail("UI tests must start in a temp folder, not the home folder (got '\(start)')")
+            return
+        }
         app.launch()
     }
 
@@ -15,8 +54,70 @@ class OtterTwinUITestCase: XCTestCase {
     func configure(_ app: XCUIApplication) {}
 
     override func tearDown() {
-        app.terminate()
+        app?.terminate()
+        if let dir = fixtureDirectory, FileManager.default.fileExists(atPath: dir.path) {
+            do {
+                try FileManager.default.removeItem(at: dir)
+            } catch {
+                XCTFail("Could not remove the UI-test fixture folder \(dir.path): \(error)")
+            }
+        }
+        fixtureDirectory = nil
         super.tearDown()
+    }
+
+    private static func createFixtures(in dir: URL) throws {
+        let fm = FileManager.default
+        let folder = dir.appendingPathComponent("Folder A", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        try Data("inside Folder A\n".utf8).write(to: folder.appendingPathComponent("inside.txt"))
+        try Data("alpha\n".utf8).write(to: dir.appendingPathComponent("alpha.txt"))
+        try Data("beta beta\n".utf8).write(to: dir.appendingPathComponent("beta.txt"))
+        try Data("gamma gamma gamma\n".utf8).write(to: dir.appendingPathComponent("gamma.txt"))
+    }
+
+    /// Every entry below `fixtureDirectory` (hidden ones included) mapped to its
+    /// contents; folders map to `nil`. Compare two of these to prove nothing changed.
+    func fixtureTreeContents() throws -> [String: Data?] {
+        let fm = FileManager.default
+        var contents: [String: Data?] = [:]
+        for relative in try fm.subpathsOfDirectory(atPath: fixtureDirectory.path) {
+            let url = fixtureDirectory.appendingPathComponent(relative)
+            var isDirectory: ObjCBool = false
+            if !fm.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+                contents.updateValue(Data("<missing>".utf8), forKey: relative)
+            } else if isDirectory.boolValue {
+                contents.updateValue(nil, forKey: relative)
+            } else {
+                let data = try Data(contentsOf: url)
+                contents.updateValue(data, forKey: relative)
+            }
+        }
+        return contents
+    }
+
+    /// Waits until `table` lists exactly `fixtureEntries`. Returns false (and fails
+    /// the test) if it shows anything else, so a test never clicks rows elsewhere.
+    @discardableResult
+    func assertShowsFixture(_ table: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        XCTAssertTrue(table.waitForExistence(timeout: 5), "file table exists", file: file, line: line)
+        waitForRows(in: table)
+        for name in Self.fixtureEntries {
+            // Name cells read "📁 <name>" / "📄 <name>", hence CONTAINS.
+            let cell = table.staticTexts.matching(
+                NSPredicate(format: "value CONTAINS %@ OR label CONTAINS %@", name, name)
+            ).firstMatch
+            guard cell.waitForExistence(timeout: 5) else {
+                XCTFail("Panel is not showing the temp fixture folder (no '\(name)')", file: file, line: line)
+                return false
+            }
+        }
+        guard table.tableRows.count == Self.fixtureEntries.count else {
+            XCTFail("Panel shows \(table.tableRows.count) rows, expected the \(Self.fixtureEntries.count) fixture entries",
+                    file: file, line: line)
+            return false
+        }
+        return true
     }
 
     func waitForRows(in table: XCUIElement, timeout: TimeInterval = 10) {

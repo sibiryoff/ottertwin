@@ -22,15 +22,28 @@ final class AppState {
     var sourceSelection: Set<URL> { activePanel == .left ? leftSelection : rightSelection }
     var sourceProvider: any VFSProvider { provider(for: activePanel) }
 
-    init() {
+    /// Launch-environment variable that UI tests set to a disposable temp folder,
+    /// so both panels start there and never in the real home folder (#44).
+    static let startDirectoryEnvironmentKey = "OTTERTWIN_UITEST_START_DIR"
+
+    init(environment: [String: String] = ProcessInfo.processInfo.environment,
+         home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        let start = Self.startDirectory(environment: environment, home: home)
+        leftPath = start
+        rightPath = start
+    }
+
+    /// The folder both panels open at launch: `home`, unless a Debug build was
+    /// launched with a non-empty `OTTERTWIN_UITEST_START_DIR`. When the variable is
+    /// set, its folder is used even if it does not exist (the panel then shows an
+    /// error), so a UI test can never silently fall back to the real home folder.
+    static func startDirectory(environment: [String: String], home: URL) -> URL {
         #if DEBUG
-        // UI tests point both panels at a disposable temp folder so they never
-        // operate on the real home folder.
-        if let start = ProcessInfo.processInfo.environment["OTTERTWIN_UITEST_START_DIR"] {
-            leftPath = URL(fileURLWithPath: start, isDirectory: true)
-            rightPath = leftPath
+        if let start = environment[startDirectoryEnvironmentKey], !start.isEmpty {
+            return URL(fileURLWithPath: start, isDirectory: true)
         }
         #endif
+        return home
     }
 
     func togglePanel() { activePanel = activePanel == .left ? .right : .left }
