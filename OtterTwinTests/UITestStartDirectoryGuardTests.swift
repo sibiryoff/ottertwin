@@ -1,6 +1,7 @@
 import XCTest
 @testable import OtterTwin
 
+#if DEBUG  // the guard is compiled into Debug builds only
 /// #59: the UI-test start-folder guard accepts only the test's disposable temp
 /// folder (or a folder inside it) and refuses the real home folder, which the
 /// sandboxed XCUITest runner cannot get from `homeDirectoryForCurrentUser`.
@@ -12,6 +13,8 @@ final class UITestStartDirectoryGuardTests: XCTestCase {
     private var base: URL!
     private var home: URL!
     private var root: URL!
+    /// Folders a test made unreadable; tearDown restores them so cleanup works.
+    private var lockedFolders: [URL] = []
 
     override func setUpWithError() throws {
         try super.setUpWithError()
@@ -26,6 +29,10 @@ final class UITestStartDirectoryGuardTests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        for folder in lockedFolders {
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        }
+        lockedFolders = []
         if let base, FileManager.default.fileExists(atPath: base.path) {
             try FileManager.default.removeItem(at: base)
         }
@@ -134,6 +141,29 @@ final class UITestStartDirectoryGuardTests: XCTestCase {
         XCTAssertFalse(allowed(escape.path))
     }
 
+    func testSymlinkInsideRootToAnUnreadableFolderIsRefused() throws {
+        // The sandboxed runner cannot resolve links into folders it may not read;
+        // an unresolvable link must be refused, not trusted as "inside the root".
+        let locked = try makeDirectory(base.appendingPathComponent("locked"))
+        let inner = try makeDirectory(locked.appendingPathComponent("inner"))
+        let escape = try makeSymlink("escape", in: root, to: inner)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked.path)
+        lockedFolders.append(locked)
+
+        XCTAssertFalse(allowed(escape.path))
+        XCTAssertFalse(allowed(escape.appendingPathComponent("deeper").path))
+        XCTAssertNil(UITestStartDirectoryGuard.canonicalComponents(escape.path, strict: true))
+    }
+
+    func testDanglingSymlinkInsideRootIsRefused() throws {
+        // The target may appear later (or elsewhere); a link that cannot be
+        // resolved is never trusted.
+        let missing = base.appendingPathComponent("missing-\(UUID().uuidString)/inner")
+        let dangling = try makeSymlink("dangling", in: root, to: missing)
+        XCTAssertFalse(allowed(dangling.path))
+        XCTAssertFalse(allowed(dangling.appendingPathComponent("deeper").path))
+    }
+
     func testDotDotComponentsAreRefused() {
         XCTAssertFalse(allowed(root.path + "/../" + root.lastPathComponent))
         XCTAssertFalse(allowed(root.path + "/sub/.."))
@@ -158,3 +188,4 @@ final class UITestStartDirectoryGuardTests: XCTestCase {
         XCTAssertFalse(UITestStartDirectoryGuard.isAllowed(startPath: realHome, disposableRoot: realHome, home: realHome))
     }
 }
+#endif

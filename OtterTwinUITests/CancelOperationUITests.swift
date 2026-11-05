@@ -31,10 +31,8 @@ final class CancelOperationUITests: OtterTwinUITestCase {
         app.launchEnvironment["OTTERTWIN_UITEST_START_DIR"] = tempDir.path
     }
 
-    override func tearDown() {
-        super.tearDown()  // terminates the app, which also ends its blocked read of the FIFO
-        if let tempDir { try? FileManager.default.removeItem(at: tempDir) }  // best-effort fixture cleanup
-    }
+    // No tearDown override: the base class terminates the app (ending its blocked
+    // read of the FIFO), then removes fixtureDirectory, which holds tempDir.
 
     private func destinationEntries() -> [String] {
         (try? FileManager.default.contentsOfDirectory(atPath: destinationDir.path)) ?? ["<unreadable>"]

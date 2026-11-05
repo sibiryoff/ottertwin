@@ -23,10 +23,7 @@ final class DeleteConfirmationUITests: OtterTwinUITestCase {
         app.launchEnvironment["OTTERTWIN_UITEST_START_DIR"] = tempDir.path
     }
 
-    override func tearDown() {
-        super.tearDown()
-        if let tempDir { try? FileManager.default.removeItem(at: tempDir) }  // best-effort fixture cleanup
-    }
+    // No tearDown override: the base class removes fixtureDirectory, which holds tempDir.
 
     func testDeleteAsksForConfirmationAndCancelKeepsFile() throws {
         let table = app.tables["fileTable.left"]
