@@ -116,7 +116,7 @@ final class SettingsService {
     /// `UserDefaults.standard`, unless `defaultsSuiteName(environment:)` names a
     /// suite; that suite is emptied first unless the keep flag is set, so every
     /// UI-test launch starts from the default settings and at most one suite
-    /// file exists. A suite name outside `com.mas.ottertwin.uitests[.*]`, or one
+    /// file exists. A name `UITestDefaultsHook.isAllowedSuiteName` rejects, or one
     /// that cannot be opened, stops the app instead of falling back to the real
     /// domain or emptying another domain; this can only happen in a Debug build
     /// launched with the variable.

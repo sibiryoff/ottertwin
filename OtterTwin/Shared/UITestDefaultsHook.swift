@@ -14,12 +14,23 @@ enum UITestDefaultsHook {
     /// Launch-environment variable; "1" keeps the suite's contents at launch, so
     /// a UI test can relaunch the app and see what the previous launch stored.
     static let keepEnvironmentKey = "OTTERTWIN_UITEST_KEEP_DEFAULTS"
-    /// The one suite UI tests use. Only this name, or a name below it
-    /// (`<suiteName>.<anything>`), is accepted, so the app can never be pointed
-    /// at (and empty) its real domain or another app's domain.
+    /// The one suite UI tests use. Only this name, or this name plus "." and a
+    /// single label of ASCII letters, digits and "-" (e.g. a UUID), is accepted,
+    /// so the app can never be pointed at (and empty) its real domain or another
+    /// app's domain. No "/", "." or other characters in the label: CFPreferences
+    /// builds a plist path from the name, so "<suiteName>./../x" must not pass.
     static let suiteName = "com.mas.ottertwin.uitests"
 
     static func isAllowedSuiteName(_ name: String) -> Bool {
-        name == suiteName || name.hasPrefix(suiteName + ".")
+        if name == suiteName { return true }
+        let prefix = suiteName + "."
+        guard name.hasPrefix(prefix) else { return false }
+        let label = name.dropFirst(prefix.count)
+        return !label.isEmpty && label.unicodeScalars.allSatisfy { scalar in
+            switch scalar {
+            case "a"..."z", "A"..."Z", "0"..."9", "-": return true
+            default: return false
+            }
+        }
     }
 }
