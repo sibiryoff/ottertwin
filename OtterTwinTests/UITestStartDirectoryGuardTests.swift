@@ -100,9 +100,18 @@ final class UITestStartDirectoryGuardTests: XCTestCase {
     }
 
     func testHomeFolderInDifferentCaseIsRefused() {
-        // Refused whether or not the volume is case-sensitive.
-        let variant = base.appendingPathComponent("HOME").path
-        XCTAssertFalse(allowed(variant, root: variant))
+        // None of these exist, so realpath cannot fix up the case and only the
+        // case-insensitive home comparison refuses them (on any volume).
+        let id = UUID().uuidString
+        let home = base.appendingPathComponent("home-\(id)").path
+        let variant = base.appendingPathComponent("HOME-\(id)").path
+        // Start folder is a case variant of home.
+        XCTAssertFalse(allowed(variant, root: variant, home: home))
+        // Disposable folder is a case variant of home; start is inside it.
+        XCTAssertFalse(allowed(variant + "/sub", root: variant, home: home))
+        // Control: a name that differs in more than case is accepted.
+        let other = base.appendingPathComponent("other-\(id)").path
+        XCTAssertTrue(allowed(other, root: other, home: home))
     }
 
     func testParentOfHomeFolderIsRefused() {

@@ -47,34 +47,44 @@ class OtterTwinUITestCase: XCTestCase {
         app.launchEnvironment[UITestDefaultsHook.suiteEnvironmentKey] = UITestDefaultsHook.suiteName
         configure(app)
 
-        // Refuse to launch unless the start folder is `dir` or inside it (#59): a
-        // removed or blanked value would make the app open the real home folder.
-        // This runner is sandboxed, so `homeDirectoryForCurrentUser` is its
-        // container; the guard compares against the real home folder instead.
-        let start = app.launchEnvironment[Self.startDirectoryEnvironmentKey] ?? ""
-        guard let home = UITestStartDirectoryGuard.realHomeDirectory(),
-              UITestStartDirectoryGuard.isAllowed(startPath: start, disposableRoot: dir.path, home: home) else {
-            XCTFail("UI tests must start inside their temp folder \(dir.path), never the home folder (got '\(start)')")
-            return
-        }
-        // Refuse to launch if a subclass removed or replaced the defaults suite:
-        // the app would then read and write its real settings.
-        guard app.launchEnvironment[UITestDefaultsHook.suiteEnvironmentKey] == UITestDefaultsHook.suiteName else {
-            XCTFail("UI tests must use the defaults suite '\(UITestDefaultsHook.suiteName)', not the app's real settings")
-            return
-        }
-        app.launch()
+        launchCheckedApp()
     }
 
     /// Terminates and relaunches the app with the same environment. With
     /// `keepingSettings` the app keeps what the previous launch stored in the
     /// UI-test suite; otherwise it starts from the default settings again.
+    /// The relaunch goes through the same checks as the first launch.
     func relaunch(keepingSettings: Bool) {
         app.terminate()
         if keepingSettings {
             app.launchEnvironment[UITestDefaultsHook.keepEnvironmentKey] = "1"
         } else {
             app.launchEnvironment.removeValue(forKey: UITestDefaultsHook.keepEnvironmentKey)
+        }
+        launchCheckedApp()
+    }
+
+    /// Launches `app`, or fails the test without launching if the environment
+    /// would let the app touch the real home folder or its real settings.
+    /// `setUp` and `relaunch(keepingSettings:)` both launch only through here.
+    private func launchCheckedApp() {
+        // Refuse unless the start folder is `fixtureDirectory` or inside it (#59):
+        // a removed or blanked value would make the app open the real home folder.
+        // This runner is sandboxed, so `homeDirectoryForCurrentUser` is its
+        // container; the guard compares against the real home folder instead.
+        let start = app.launchEnvironment[Self.startDirectoryEnvironmentKey] ?? ""
+        guard let dir = fixtureDirectory,
+              let home = UITestStartDirectoryGuard.realHomeDirectory(),
+              UITestStartDirectoryGuard.isAllowed(startPath: start, disposableRoot: dir.path, home: home) else {
+            XCTFail("UI tests must start inside their temp folder \(fixtureDirectory?.path ?? "<none>"), "
+                    + "never the home folder (got '\(start)')")
+            return
+        }
+        // Refuse if the defaults suite was removed or replaced: the app would
+        // then read and write its real settings.
+        guard app.launchEnvironment[UITestDefaultsHook.suiteEnvironmentKey] == UITestDefaultsHook.suiteName else {
+            XCTFail("UI tests must use the defaults suite '\(UITestDefaultsHook.suiteName)', not the app's real settings")
+            return
         }
         app.launch()
     }
