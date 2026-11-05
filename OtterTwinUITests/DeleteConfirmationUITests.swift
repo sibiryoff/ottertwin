@@ -9,7 +9,9 @@ final class DeleteConfirmationUITests: OtterTwinUITestCase {
 
     override func configure(_ app: XCUIApplication) {
         let fm = FileManager.default
-        tempDir = fm.temporaryDirectory
+        // Inside the base class's disposable folder: the only place the
+        // start-folder guard accepts (#59).
+        tempDir = fixtureDirectory
             .appendingPathComponent("DeleteConfirmationUITests-\(UUID().uuidString)", isDirectory: true)
         victim = tempDir.appendingPathComponent("victim.txt")
         do {
@@ -21,10 +23,7 @@ final class DeleteConfirmationUITests: OtterTwinUITestCase {
         app.launchEnvironment["OTTERTWIN_UITEST_START_DIR"] = tempDir.path
     }
 
-    override func tearDown() {
-        super.tearDown()
-        if let tempDir { try? FileManager.default.removeItem(at: tempDir) }  // best-effort fixture cleanup
-    }
+    // No tearDown override: the base class removes fixtureDirectory, which holds tempDir.
 
     func testDeleteAsksForConfirmationAndCancelKeepsFile() throws {
         let table = app.tables["fileTable.left"]

@@ -79,6 +79,8 @@ targets:
       - OtterTwinUITests
       # Hook names shared with the app (#57), so both sides use the same keys.
       - path: OtterTwin/Shared/UITestDefaultsHook.swift
+      # Start-folder guard (#59), unit-tested in OtterTwinTests.
+      - path: OtterTwin/Shared/UITestStartDirectoryGuard.swift
     dependencies:
       - target: OtterTwin
     settings:
