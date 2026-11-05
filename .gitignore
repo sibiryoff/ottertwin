@@ -18,8 +18,9 @@ build/
 .build/
 .swiftpm/
 
-# Claude Code (only the project's own skills are tracked)
+# Claude Code (only the project's shared settings and own skills are tracked)
 .claude/*
+!.claude/settings.json
 !.claude/skills/
 .claude/skills/*
 !.claude/skills/ottertwin-factory/
