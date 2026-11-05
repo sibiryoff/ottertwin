@@ -8,15 +8,13 @@ import XCTest
 /// `fixtureEntries` and is removed in `tearDown`. A subclass may point the app
 /// at its own temp folder in `configure(_:)`; it then owns that folder's cleanup.
 ///
-/// Every test also gets its own throwaway defaults suite (`defaultsSuiteName`,
-/// passed via `OTTERTWIN_UITEST_DEFAULTS_SUITE`), so a test that changes a
-/// setting (e.g. turns verification off) never touches the app's real
-/// preferences domain (#57). The suite is removed in `tearDown`.
+/// Every launch also stores the app's settings in the UI-test defaults suite
+/// (`UITestDefaultsHook.suiteName`, passed via `OTTERTWIN_UITEST_DEFAULTS_SUITE`),
+/// never in the app's real preferences domain (#57). The app empties that suite
+/// itself at launch, because this sandboxed runner cannot reach the app's
+/// preferences; `relaunch(keepingSettings:)` can keep it across a relaunch.
 class OtterTwinUITestCase: XCTestCase {
     static let startDirectoryEnvironmentKey = "OTTERTWIN_UITEST_START_DIR"
-    static let defaultsSuiteEnvironmentKey = "OTTERTWIN_UITEST_DEFAULTS_SUITE"
-    /// The app's own preferences domain, which a UI test must never use.
-    static let appBundleIdentifier = "com.mas.ottertwin"
 
     /// Top-level names in `fixtureDirectory`, in the order the panel lists them
     /// (folders first, then files by name). No name starts with `c`, so typing `c`
@@ -26,8 +24,6 @@ class OtterTwinUITestCase: XCTestCase {
     var app: XCUIApplication!
     /// The temp folder both panels start in, unless `configure(_:)` replaces it.
     private(set) var fixtureDirectory: URL!
-    /// The unique defaults suite the app stores its settings in during this test.
-    private(set) var defaultsSuiteName: String!
 
     override func setUp() {
         super.setUp()
@@ -44,12 +40,9 @@ class OtterTwinUITestCase: XCTestCase {
             return
         }
 
-        let suite = "\(Self.appBundleIdentifier).uitests.\(UUID().uuidString)"
-        defaultsSuiteName = suite
-
         app = XCUIApplication()
         app.launchEnvironment[Self.startDirectoryEnvironmentKey] = dir.path
-        app.launchEnvironment[Self.defaultsSuiteEnvironmentKey] = suite
+        app.launchEnvironment[UITestDefaultsHook.suiteEnvironmentKey] = UITestDefaultsHook.suiteName
         configure(app)
 
         // Refuse to launch if a subclass removed or blanked the start folder: the
@@ -63,9 +56,22 @@ class OtterTwinUITestCase: XCTestCase {
         }
         // Refuse to launch if a subclass removed or replaced the defaults suite:
         // the app would then read and write its real settings.
-        guard app.launchEnvironment[Self.defaultsSuiteEnvironmentKey] == suite else {
-            XCTFail("UI tests must use their own defaults suite '\(suite)', not the app's real settings")
+        guard app.launchEnvironment[UITestDefaultsHook.suiteEnvironmentKey] == UITestDefaultsHook.suiteName else {
+            XCTFail("UI tests must use the defaults suite '\(UITestDefaultsHook.suiteName)', not the app's real settings")
             return
+        }
+        app.launch()
+    }
+
+    /// Terminates and relaunches the app with the same environment. With
+    /// `keepingSettings` the app keeps what the previous launch stored in the
+    /// UI-test suite; otherwise it starts from the default settings again.
+    func relaunch(keepingSettings: Bool) {
+        app.terminate()
+        if keepingSettings {
+            app.launchEnvironment[UITestDefaultsHook.keepEnvironmentKey] = "1"
+        } else {
+            app.launchEnvironment.removeValue(forKey: UITestDefaultsHook.keepEnvironmentKey)
         }
         app.launch()
     }
@@ -83,12 +89,6 @@ class OtterTwinUITestCase: XCTestCase {
             }
         }
         fixtureDirectory = nil
-        if let suite = defaultsSuiteName {
-            // The runner and the app share the user's preferences (no sandbox), so
-            // this removes the suite the app wrote during the test.
-            UserDefaults().removePersistentDomain(forName: suite)
-        }
-        defaultsSuiteName = nil
         super.tearDown()
     }
 

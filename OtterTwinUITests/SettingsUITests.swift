@@ -43,26 +43,40 @@ final class SettingsUITests: OtterTwinUITestCase {
         }
     }
 
-    /// #57: turning verification off is stored in this test's own defaults suite,
-    /// never in the app's real preferences domain (which this test does not read).
-    func testDisablingVerificationIsStoredInTheTestDefaultsSuite() {
-        app.buttons["toolbar.settings"].click()
-
-        let toggle = app.checkBoxes["settings.checksumEnabled"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
-        // A fresh suite starts with verification on.
-        XCTAssertEqual(toggle.value as? Int, 1)
+    /// #57: settings changed in a UI test live only in the UI-test defaults
+    /// suite. Turning verification off survives a relaunch that keeps the suite,
+    /// and a fresh launch starts with verification on again, which could not
+    /// happen if the choice (and its acknowledgement) had gone to the real domain.
+    func testDisabledVerificationStaysInTheUITestSuite() {
+        let toggle = openSettingsChecksumToggle()
+        waitFor(toggle, value: 1, "a fresh launch starts with verification on")
         toggle.click()
         let disableButton = app.buttons["Disable Verification"]
         XCTAssertTrue(disableButton.waitForExistence(timeout: 3))
         disableButton.click()
+        waitFor(toggle, value: 0, "verification is off after confirming")
 
-        let suite = defaultsSuiteName!
-        let stored = NSPredicate { _, _ in
-            // The app writes through cfprefsd; re-read the suite on every poll.
-            CFPreferencesAppSynchronize(suite as CFString)
-            return UserDefaults(suiteName: suite)?.object(forKey: "checksumEnabled") as? Bool == false
-        }
-        wait(for: [XCTNSPredicateExpectation(predicate: stored, object: nil)], timeout: 10)
+        relaunch(keepingSettings: true)
+        waitFor(openSettingsChecksumToggle(), value: 0, "a relaunch keeping the suite still has verification off")
+
+        relaunch(keepingSettings: false)
+        waitFor(openSettingsChecksumToggle(), value: 1, "a fresh launch has verification on again")
+    }
+
+    private func openSettingsChecksumToggle() -> XCUIElement {
+        let settingsButton = app.buttons["toolbar.settings"]
+        XCTAssertTrue(settingsButton.waitForExistence(timeout: 5))
+        settingsButton.click()
+        let toggle = app.checkBoxes["settings.checksumEnabled"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        return toggle
+    }
+
+    private func waitFor(_ toggle: XCUIElement, value: Int, _ message: String,
+                         file: StaticString = #filePath, line: UInt = #line) {
+        let matches = NSPredicate(format: "value == %d", value)
+        let result = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: matches, object: toggle)],
+                                      timeout: 5)
+        XCTAssertEqual(result, .completed, message, file: file, line: line)
     }
 }

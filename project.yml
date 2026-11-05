@@ -77,6 +77,8 @@ targets:
     platform: macOS
     sources:
       - OtterTwinUITests
+      # Hook names shared with the app (#57), so both sides use the same keys.
+      - path: OtterTwin/Shared/UITestDefaultsHook.swift
     dependencies:
       - target: OtterTwin
     settings:
