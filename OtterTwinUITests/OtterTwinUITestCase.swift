@@ -7,6 +7,12 @@ import XCTest
 /// the real home folder (#44, `docs/agent-workflow.md` §5). The folder holds
 /// `fixtureEntries` and is removed in `tearDown`. A subclass may point the app
 /// at its own temp folder in `configure(_:)`; it then owns that folder's cleanup.
+///
+/// Every launch also stores the app's settings in the UI-test defaults suite
+/// (`UITestDefaultsHook.suiteName`, passed via `OTTERTWIN_UITEST_DEFAULTS_SUITE`),
+/// never in the app's real preferences domain (#57). The app empties that suite
+/// itself at launch, because this sandboxed runner cannot reach the app's
+/// preferences; `relaunch(keepingSettings:)` can keep it across a relaunch.
 class OtterTwinUITestCase: XCTestCase {
     static let startDirectoryEnvironmentKey = "OTTERTWIN_UITEST_START_DIR"
 
@@ -36,6 +42,7 @@ class OtterTwinUITestCase: XCTestCase {
 
         app = XCUIApplication()
         app.launchEnvironment[Self.startDirectoryEnvironmentKey] = dir.path
+        app.launchEnvironment[UITestDefaultsHook.suiteEnvironmentKey] = UITestDefaultsHook.suiteName
         configure(app)
 
         // Refuse to launch if a subclass removed or blanked the start folder: the
@@ -46,6 +53,25 @@ class OtterTwinUITestCase: XCTestCase {
                 != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path else {
             XCTFail("UI tests must start in a temp folder, not the home folder (got '\(start)')")
             return
+        }
+        // Refuse to launch if a subclass removed or replaced the defaults suite:
+        // the app would then read and write its real settings.
+        guard app.launchEnvironment[UITestDefaultsHook.suiteEnvironmentKey] == UITestDefaultsHook.suiteName else {
+            XCTFail("UI tests must use the defaults suite '\(UITestDefaultsHook.suiteName)', not the app's real settings")
+            return
+        }
+        app.launch()
+    }
+
+    /// Terminates and relaunches the app with the same environment. With
+    /// `keepingSettings` the app keeps what the previous launch stored in the
+    /// UI-test suite; otherwise it starts from the default settings again.
+    func relaunch(keepingSettings: Bool) {
+        app.terminate()
+        if keepingSettings {
+            app.launchEnvironment[UITestDefaultsHook.keepEnvironmentKey] = "1"
+        } else {
+            app.launchEnvironment.removeValue(forKey: UITestDefaultsHook.keepEnvironmentKey)
         }
         app.launch()
     }
