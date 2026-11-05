@@ -9,7 +9,9 @@ final class DeleteConfirmationUITests: OtterTwinUITestCase {
 
     override func configure(_ app: XCUIApplication) {
         let fm = FileManager.default
-        tempDir = fm.temporaryDirectory
+        // Inside the base class's disposable folder: the only place the
+        // start-folder guard accepts (#59).
+        tempDir = fixtureDirectory
             .appendingPathComponent("DeleteConfirmationUITests-\(UUID().uuidString)", isDirectory: true)
         victim = tempDir.appendingPathComponent("victim.txt")
         do {

@@ -6,7 +6,8 @@ import XCTest
 /// folder (`fixtureDirectory`, passed via `OTTERTWIN_UITEST_START_DIR`), never in
 /// the real home folder (#44, `docs/agent-workflow.md` §5). The folder holds
 /// `fixtureEntries` and is removed in `tearDown`. A subclass may point the app
-/// at its own temp folder in `configure(_:)`; it then owns that folder's cleanup.
+/// at a folder inside `fixtureDirectory` in `configure(_:)` (removed with it);
+/// any other start folder is refused before launch (#59).
 ///
 /// Every launch also stores the app's settings in the UI-test defaults suite
 /// (`UITestDefaultsHook.suiteName`, passed via `OTTERTWIN_UITEST_DEFAULTS_SUITE`),
@@ -22,7 +23,8 @@ class OtterTwinUITestCase: XCTestCase {
     static let fixtureEntries = ["Folder A", "alpha.txt", "beta.txt", "gamma.txt"]
 
     var app: XCUIApplication!
-    /// The temp folder both panels start in, unless `configure(_:)` replaces it.
+    /// The temp folder both panels start in, unless `configure(_:)` picks a
+    /// folder inside it.
     private(set) var fixtureDirectory: URL!
 
     override func setUp() {
@@ -45,13 +47,14 @@ class OtterTwinUITestCase: XCTestCase {
         app.launchEnvironment[UITestDefaultsHook.suiteEnvironmentKey] = UITestDefaultsHook.suiteName
         configure(app)
 
-        // Refuse to launch if a subclass removed or blanked the start folder: the
-        // app would then open the real home folder.
+        // Refuse to launch unless the start folder is `dir` or inside it (#59): a
+        // removed or blanked value would make the app open the real home folder.
+        // This runner is sandboxed, so `homeDirectoryForCurrentUser` is its
+        // container; the guard compares against the real home folder instead.
         let start = app.launchEnvironment[Self.startDirectoryEnvironmentKey] ?? ""
-        guard !start.isEmpty,
-              URL(fileURLWithPath: start).standardizedFileURL.path
-                != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path else {
-            XCTFail("UI tests must start in a temp folder, not the home folder (got '\(start)')")
+        guard let home = UITestStartDirectoryGuard.realHomeDirectory(),
+              UITestStartDirectoryGuard.isAllowed(startPath: start, disposableRoot: dir.path, home: home) else {
+            XCTFail("UI tests must start inside their temp folder \(dir.path), never the home folder (got '\(start)')")
             return
         }
         // Refuse to launch if a subclass removed or replaced the defaults suite:

@@ -14,7 +14,9 @@ final class CancelOperationUITests: OtterTwinUITestCase {
 
     override func configure(_ app: XCUIApplication) {
         let fm = FileManager.default
-        tempDir = fm.temporaryDirectory
+        // Inside the base class's disposable folder: the only place the
+        // start-folder guard accepts (#59).
+        tempDir = fixtureDirectory
             .appendingPathComponent("CancelOperationUITests-\(UUID().uuidString)", isDirectory: true)
         destinationDir = tempDir.appendingPathComponent("dest", isDirectory: true)
         do {
