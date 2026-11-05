@@ -42,4 +42,27 @@ final class SettingsUITests: OtterTwinUITestCase {
             XCTAssertFalse(algPicker.isEnabled)
         }
     }
+
+    /// #57: turning verification off is stored in this test's own defaults suite,
+    /// never in the app's real preferences domain (which this test does not read).
+    func testDisablingVerificationIsStoredInTheTestDefaultsSuite() {
+        app.buttons["toolbar.settings"].click()
+
+        let toggle = app.checkBoxes["settings.checksumEnabled"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        // A fresh suite starts with verification on.
+        XCTAssertEqual(toggle.value as? Int, 1)
+        toggle.click()
+        let disableButton = app.buttons["Disable Verification"]
+        XCTAssertTrue(disableButton.waitForExistence(timeout: 3))
+        disableButton.click()
+
+        let suite = defaultsSuiteName!
+        let stored = NSPredicate { _, _ in
+            // The app writes through cfprefsd; re-read the suite on every poll.
+            CFPreferencesAppSynchronize(suite as CFString)
+            return UserDefaults(suiteName: suite)?.object(forKey: "checksumEnabled") as? Bool == false
+        }
+        wait(for: [XCTNSPredicateExpectation(predicate: stored, object: nil)], timeout: 10)
+    }
 }

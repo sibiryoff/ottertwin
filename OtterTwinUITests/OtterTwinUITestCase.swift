@@ -7,8 +7,16 @@ import XCTest
 /// the real home folder (#44, `docs/agent-workflow.md` §5). The folder holds
 /// `fixtureEntries` and is removed in `tearDown`. A subclass may point the app
 /// at its own temp folder in `configure(_:)`; it then owns that folder's cleanup.
+///
+/// Every test also gets its own throwaway defaults suite (`defaultsSuiteName`,
+/// passed via `OTTERTWIN_UITEST_DEFAULTS_SUITE`), so a test that changes a
+/// setting (e.g. turns verification off) never touches the app's real
+/// preferences domain (#57). The suite is removed in `tearDown`.
 class OtterTwinUITestCase: XCTestCase {
     static let startDirectoryEnvironmentKey = "OTTERTWIN_UITEST_START_DIR"
+    static let defaultsSuiteEnvironmentKey = "OTTERTWIN_UITEST_DEFAULTS_SUITE"
+    /// The app's own preferences domain, which a UI test must never use.
+    static let appBundleIdentifier = "com.mas.ottertwin"
 
     /// Top-level names in `fixtureDirectory`, in the order the panel lists them
     /// (folders first, then files by name). No name starts with `c`, so typing `c`
@@ -18,6 +26,8 @@ class OtterTwinUITestCase: XCTestCase {
     var app: XCUIApplication!
     /// The temp folder both panels start in, unless `configure(_:)` replaces it.
     private(set) var fixtureDirectory: URL!
+    /// The unique defaults suite the app stores its settings in during this test.
+    private(set) var defaultsSuiteName: String!
 
     override func setUp() {
         super.setUp()
@@ -34,8 +44,12 @@ class OtterTwinUITestCase: XCTestCase {
             return
         }
 
+        let suite = "\(Self.appBundleIdentifier).uitests.\(UUID().uuidString)"
+        defaultsSuiteName = suite
+
         app = XCUIApplication()
         app.launchEnvironment[Self.startDirectoryEnvironmentKey] = dir.path
+        app.launchEnvironment[Self.defaultsSuiteEnvironmentKey] = suite
         configure(app)
 
         // Refuse to launch if a subclass removed or blanked the start folder: the
@@ -45,6 +59,12 @@ class OtterTwinUITestCase: XCTestCase {
               URL(fileURLWithPath: start).standardizedFileURL.path
                 != FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path else {
             XCTFail("UI tests must start in a temp folder, not the home folder (got '\(start)')")
+            return
+        }
+        // Refuse to launch if a subclass removed or replaced the defaults suite:
+        // the app would then read and write its real settings.
+        guard app.launchEnvironment[Self.defaultsSuiteEnvironmentKey] == suite else {
+            XCTFail("UI tests must use their own defaults suite '\(suite)', not the app's real settings")
             return
         }
         app.launch()
@@ -63,6 +83,12 @@ class OtterTwinUITestCase: XCTestCase {
             }
         }
         fixtureDirectory = nil
+        if let suite = defaultsSuiteName {
+            // The runner and the app share the user's preferences (no sandbox), so
+            // this removes the suite the app wrote during the test.
+            UserDefaults().removePersistentDomain(forName: suite)
+        }
+        defaultsSuiteName = nil
         super.tearDown()
     }
 
