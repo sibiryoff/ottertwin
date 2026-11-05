@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api -X PUT repos/sibiryoff/ottertwin/pulls/*/merge *)",
+      "mcp__github__merge_pull_request"
+    ]
+  }
+}
